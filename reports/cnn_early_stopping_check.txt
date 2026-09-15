@@ -1,0 +1,49 @@
+fold 0 base
+outer_f1 épocas 6-25: media 0.364  sd 0.029  | inner_f1 sd 0.031 | salto medio entre épocas 0.030
+corr outer_f1 vs inner_f1: 0.57 | vs -inner_loss: 0.09
+epoch by inner_f1: 19 -> outer 0.375 | epoch by inner_loss: 1 -> outer 0.353 | max outer 0.411
+fold 3 base
+outer_f1 épocas 6-25: media 0.552  sd 0.068  | inner_f1 sd 0.057 | salto medio entre épocas 0.056
+corr outer_f1 vs inner_f1: 0.25 | vs -inner_loss: 0.27
+epoch by inner_f1: 1 -> outer 0.534 | epoch by inner_loss: 5 -> outer 0.607 | max outer 0.654
+fold 0 lr3e-4
+outer_f1 épocas 6-25: media 0.362  sd 0.038  | inner_f1 sd 0.035 | salto medio entre épocas 0.044
+corr outer_f1 vs inner_f1: 0.74 | vs -inner_loss: -0.13
+epoch by inner_f1: 6 -> outer 0.423 | epoch by inner_loss: 16 -> outer 0.319 | max outer 0.423
+fold 3 lr3e-4
+outer_f1 épocas 6-25: media 0.521  sd 0.075  | inner_f1 sd 0.065 | salto medio entre épocas 0.098
+corr outer_f1 vs inner_f1: 0.34 | vs -inner_loss: 0.21
+epoch by inner_f1: 7 -> outer 0.475 | epoch by inner_loss: 7 -> outer 0.475 | max outer 0.632
+fold 0 aug
+outer_f1 épocas 6-25: media 0.349  sd 0.025  | inner_f1 sd 0.046 | salto medio entre épocas 0.033
+corr outer_f1 vs inner_f1: 0.34 | vs -inner_loss: 0.19
+epoch by inner_f1: 8 -> outer 0.358 | epoch by inner_loss: 1 -> outer 0.362 | max outer 0.408
+fold 3 aug
+outer_f1 épocas 6-25: media 0.560  sd 0.053  | inner_f1 sd 0.072 | salto medio entre épocas 0.048
+corr outer_f1 vs inner_f1: 0.25 | vs -inner_loss: 0.08
+epoch by inner_f1: 3 -> outer 0.622 | epoch by inner_loss: 14 -> outer 0.606 | max outer 0.691
+fold 0 wd
+outer_f1 épocas 6-25: media 0.350  sd 0.028  | inner_f1 sd 0.045 | salto medio entre épocas 0.027
+corr outer_f1 vs inner_f1: 0.36 | vs -inner_loss: -0.16
+epoch by inner_f1: 12 -> outer 0.339 | epoch by inner_loss: 16 -> outer 0.331 | max outer 0.402
+fold 3 wd
+outer_f1 épocas 6-25: media 0.555  sd 0.065  | inner_f1 sd 0.049 | salto medio entre épocas 0.070
+corr outer_f1 vs inner_f1: -0.12 | vs -inner_loss: 0.09
+epoch by inner_f1: 3 -> outer 0.334 | epoch by inner_loss: 5 -> outer 0.532 | max outer 0.67
+fold 0 ema
+outer_f1 épocas 6-25: media 0.286  sd 0.026  | inner_f1 sd 0.013 | salto medio entre épocas 0.009
+corr outer_f1 vs inner_f1: 0.84 | vs -inner_loss: 0.14
+epoch by inner_f1: 4 -> outer 0.322 | epoch by inner_loss: 22 -> outer 0.295 | max outer 0.346
+fold 3 ema
+outer_f1 épocas 6-25: media 0.325  sd 0.127  | inner_f1 sd 0.132 | salto medio entre épocas 0.028
+corr outer_f1 vs inner_f1: 0.88 | vs -inner_loss: 0.62
+epoch by inner_f1: 4 -> outer 0.464 | epoch by inner_loss: 13 -> outer 0.411 | max outer 0.517
+fold 0 lr3e-4+aug+ema
+outer_f1 épocas 6-25: media 0.339  sd 0.040  | inner_f1 sd 0.046 | salto medio entre épocas 0.006
+corr outer_f1 vs inner_f1: 0.96 | vs -inner_loss: -0.60
+epoch by inner_f1: 25 -> outer 0.375 | epoch by inner_loss: 1 -> outer 0.097 | max outer 0.381
+fold 3 lr3e-4+aug+ema
+outer_f1 épocas 6-25: media 0.214  sd 0.115  | inner_f1 sd 0.098 | salto medio entre épocas 0.020
+corr outer_f1 vs inner_f1: 0.94 | vs -inner_loss: -0.10
+epoch by inner_f1: 7 -> outer 0.428 | epoch by inner_loss: 15 -> outer 0.23 | max outer 0.433
+

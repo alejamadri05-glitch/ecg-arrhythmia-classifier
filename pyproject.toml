@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecg-arrhythmia-classifier"
+version = "0.1.0"
+description = "Clasificador de latidos ECG (AAMI N/S/V/F) sobre MIT-BIH con evaluación inter-paciente. Proyecto educativo, no es un dispositivo médico."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "wfdb>=4.1",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "scikit-learn>=1.4",
+    "xgboost>=2.0",
+    "torch>=2.2",
+    "neurokit2>=0.2.7",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+app = ["streamlit>=1.33"]
+dev = ["pytest>=8", "ruff>=0.4", "httpx>=0.27", "jupyter", "nbconvert", "ipykernel"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

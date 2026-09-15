@@ -1,0 +1,16 @@
+{
+  "rule": "Mayor F1 macro out-of-fold en DS1 (5 folds por paciente). Fijada antes de ver DS2.",
+  "primary_model": "baseline_xgb",
+  "comparison_model": "cnn",
+  "cv_macro_f1": {
+    "baseline_xgb": 0.4931,
+    "cnn_mean_3_seeds": 0.4634,
+    "cnn_sd": 0.0271
+  },
+  "cnn_config": {
+    "rr": "ratios",
+    "balance": "weights",
+    "augment": true
+  },
+  "note": "Ambos modelos se eval\u00faan una sola vez en DS2; el primario se declara ac\u00e1."
+}

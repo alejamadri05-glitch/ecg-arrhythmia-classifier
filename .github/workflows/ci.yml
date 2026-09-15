@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Instalar dependencias (torch CPU)
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install -e ".[api,dev]"
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Pytest
+        # Las pruebas que necesitan MIT-BIH se saltan solas si data/ no existe.
+        run: pytest -q

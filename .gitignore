@@ -1,0 +1,18 @@
+# Datos descargados de PhysioNet: nunca se suben
+data/
+
+# Pesos de modelos
+models/*.pt
+models/*.joblib
+models/*.json
+!models/.gitkeep
+
+# Entorno
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.DS_Store
+mlruns/
