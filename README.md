@@ -100,6 +100,11 @@ inversión de polaridad.
 ([`reports/model_selection.json`](reports/model_selection.json)). La CNN se reporta como
 comparación.
 
+## Licencia
+
+El código está bajo licencia [MIT](LICENSE). Los datos de MIT-BIH **no** se incluyen en el
+repositorio y tienen su propia licencia (ODC-By, ver abajo).
+
 ## Datos y citas
 
 MIT-BIH Arrhythmia Database, [PhysioNet](https://physionet.org/content/mitdb/) (ODC-By).

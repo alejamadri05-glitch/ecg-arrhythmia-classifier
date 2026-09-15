@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "ecg-arrhythmia-classifier"
 version = "0.1.0"
 description = "Clasificador de latidos ECG (AAMI N/S/V/F) sobre MIT-BIH con evaluación inter-paciente. Proyecto educativo, no es un dispositivo médico."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "wfdb>=4.1",
