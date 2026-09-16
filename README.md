@@ -6,7 +6,7 @@ Clasifica cada latido de un ECG en las 4 clases AAMI (**N, S, V, F**) con evalua
 > **Aviso:** proyecto educativo y de investigación. No es un dispositivo médico ni debe usarse
 > para decisiones clínicas.
 
-🚧 En construcción: fases 1 a 4 completas (EDA, segmentación, baseline y CNN).
+🚧 En construcción: fases 1 a 5 completas. Resultado final en DS2 más abajo.
 
 ## Inicio rápido
 
@@ -16,10 +16,42 @@ pip install -e ".[api,app,dev]"
 python -m ecg.segment          # descarga MIT-BIH (~100 MB) y genera data/processed/ds{1,2}.npz
 python -m ecg.train baseline   # validación cruzada por paciente en DS1 + modelo final
 python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
+python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
 pytest -q
 ```
 
 **macOS:** XGBoost necesita OpenMP: `brew install libomp`.
+
+## Resultado final (DS2, 22 pacientes nunca vistos)
+
+Modelo primario: **XGBoost** con features de RR + morfología, elegido por validación cruzada por
+paciente dentro de DS1 **antes** de mirar DS2, que se evaluó una sola vez.
+
+| Clase | Se | +P | F1 |
+|---|---|---|---|
+| N (normal) | 0.905 | 0.962 | 0.933 |
+| S (supraventricular) | 0.155 | 0.221 | 0.182 |
+| V (ventricular) | **0.964** | **0.852** | **0.905** |
+| F (fusión) | 0.137 | 0.017 | 0.030 |
+| **F1 macro** | | | **0.512** |
+
+Exactitud 0.876, contra 0.890 de predecir siempre N: por eso la métrica principal es Se y +P por
+clase, no la exactitud. La CNN queda en F1 macro 0.49, con muchas más falsas alarmas
+(exactitud 0.704); detalle en [`notebooks/04_ds2_evaluation.ipynb`](notebooks/04_ds2_evaluation.ipynb).
+
+**Lo importante de estos números**
+
+- **La validación no fue optimista.** La F1 macro pasó de 0.493 en validación cruzada a 0.512 en
+  DS2. Ese es el punto de separar pacientes desde el principio, y la razón por la que este
+  proyecto no reporta el 99 % habitual de los tutoriales.
+- **V, la clase clínicamente más importante, funciona:** solo 58 de 3 219 latidos ventriculares se
+  leyeron como normales.
+- **S falla, y se sabe exactamente por qué.** El registro 232 aporta el 75 % de los S de DS2, es
+  bradicárdico, y el modelo usa intervalos RR **absolutos**: sus latidos prematuros (RR 0.73 s)
+  parecen normales para un modelo entrenado con pacientes cuyos latidos normales están en 0.76 s.
+  El EDA lo había anticipado y quedó registrado como riesgo antes de evaluar. La CNN, que usa solo
+  **cocientes** de RR, detecta el 55.9 % de esos latidos.
+- **F es inservible** (+P 0.017): casi toda la clase F de entrenamiento está en un solo paciente.
 
 ## Estado
 
@@ -29,7 +61,7 @@ pytest -q
 | 2 | Filtro, segmentación y features RR — [`src/ecg/segment.py`](src/ecg/segment.py) | ✅ |
 | 3 | Baseline (Random Forest / XGBoost) — [`notebooks/02_baseline.ipynb`](notebooks/02_baseline.ipynb) | ✅ |
 | 4 | CNN 1D (PyTorch) — [`notebooks/03_cnn.ipynb`](notebooks/03_cnn.ipynb) | ✅ |
-| 5 | Evaluación final en DS2 | ⏳ |
+| 5 | Evaluación final en DS2 — [`notebooks/04_ds2_evaluation.ipynb`](notebooks/04_ds2_evaluation.ipynb) | ✅ |
 | 6 | API FastAPI + Docker + demo Streamlit | ⏳ |
 | 7 | Documentación estilo IEC 62304 / ISO 14971 | ⏳ |
 | 8 | README final y publicación | ⏳ |
@@ -56,7 +88,7 @@ Elegido entre 24 experimentos por F1 macro out-of-fold con `GroupKFold` de 5 fol
 | F | 0.000 | 0.000 | 0.000 |
 | **F1 macro** | | | **0.493** |
 
-Estas no son las métricas finales: DS2 se evalúa una sola vez en la Fase 5. La exactitud
+Estas no son las métricas finales (ver DS2 más arriba): así se eligió el modelo. La exactitud
 (0.897) es menor que la de predecir siempre N (0.899). Por eso se reportan Se y +P por clase.
 
 Modos de falla, verificados con las anotaciones de ritmo de MIT-BIH:

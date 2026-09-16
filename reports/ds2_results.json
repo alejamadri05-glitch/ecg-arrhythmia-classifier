@@ -1,0 +1,254 @@
+{
+  "aviso": "Proyecto educativo. No es un dispositivo médico.",
+  "seleccion": {
+    "rule": "Mayor F1 macro out-of-fold en DS1 (5 folds por paciente). Fijada antes de ver DS2.",
+    "primary_model": "baseline_xgb",
+    "comparison_model": "cnn",
+    "cv_macro_f1": {
+      "baseline_xgb": 0.4931,
+      "cnn_mean_3_seeds": 0.4634,
+      "cnn_sd": 0.0271
+    },
+    "cnn_config": {
+      "rr": "ratios",
+      "balance": "weights",
+      "augment": true
+    },
+    "note": "Ambos modelos se evalúan una sola vez en DS2; el primario se declara acá."
+  },
+  "dataset": {
+    "split": "DS2 (de Chazal et al., 2004)",
+    "registros": [
+      100,
+      103,
+      105,
+      111,
+      113,
+      117,
+      121,
+      123,
+      200,
+      202,
+      210,
+      212,
+      213,
+      214,
+      219,
+      221,
+      222,
+      228,
+      231,
+      232,
+      233,
+      234
+    ],
+    "latidos": 49661,
+    "por_clase": {
+      "N": 44218,
+      "S": 1836,
+      "V": 3219,
+      "F": 388
+    }
+  },
+  "accuracy_prediciendo_siempre_N": 0.8904,
+  "modelos": {
+    "baseline_xgb": {
+      "macro_f1": 0.5125,
+      "accuracy": 0.8755,
+      "N_Se": 0.9055,
+      "N_+P": 0.9617,
+      "N_F1": 0.9328,
+      "S_Se": 0.1547,
+      "S_+P": 0.2208,
+      "S_F1": 0.1819,
+      "V_Se": 0.964,
+      "V_+P": 0.8525,
+      "V_F1": 0.9048,
+      "F_Se": 0.1366,
+      "F_+P": 0.0171,
+      "F_F1": 0.0304,
+      "matriz_confusion": {
+        "N": {
+          "N": 40039,
+          "S": 1231,
+          "V": 58,
+          "F": 305
+        },
+        "S": {
+          "N": 966,
+          "S": 284,
+          "V": 35,
+          "F": 1
+        },
+        "V": {
+          "N": 196,
+          "S": 312,
+          "V": 3103,
+          "F": 29
+        },
+        "F": {
+          "N": 3017,
+          "S": 9,
+          "V": 23,
+          "F": 53
+        }
+      }
+    },
+    "cnn": {
+      "macro_f1": 0.4945,
+      "accuracy": 0.7039,
+      "N_Se": 0.6973,
+      "N_+P": 0.9733,
+      "N_F1": 0.8125,
+      "S_Se": 0.5577,
+      "S_+P": 0.6187,
+      "S_F1": 0.5867,
+      "V_Se": 0.9618,
+      "V_+P": 0.4134,
+      "V_F1": 0.5782,
+      "F_Se": 0.0077,
+      "F_+P": 0.0003,
+      "F_F1": 0.0007,
+      "matriz_confusion": {
+        "N": {
+          "N": 30835,
+          "S": 507,
+          "V": 35,
+          "F": 305
+        },
+        "S": {
+          "N": 554,
+          "S": 1024,
+          "V": 75,
+          "F": 2
+        },
+        "V": {
+          "N": 4076,
+          "S": 240,
+          "V": 3096,
+          "F": 78
+        },
+        "F": {
+          "N": 8753,
+          "S": 65,
+          "V": 13,
+          "F": 3
+        }
+      }
+    }
+  },
+  "riesgos": {
+    "lbbb": {
+      "111": {
+        "latidos_L": 2121,
+        "baseline_xgb_pct_N": 98.9,
+        "cnn_pct_N": 84.8
+      },
+      "214": {
+        "latidos_L": 2001,
+        "baseline_xgb_pct_N": 90.2,
+        "cnn_pct_N": 3.0
+      }
+    },
+    "record_232_S": {
+      "latidos_S": 1381,
+      "pct_de_los_S_de_DS2": 75.2,
+      "baseline_xgb": {
+        "Se": 0.004,
+        "+P": 1.0
+      },
+      "cnn": {
+        "Se": 0.559,
+        "+P": 0.999
+      }
+    },
+    "record_213_F": {
+      "latidos_F": 362,
+      "baseline_xgb": 0.144,
+      "cnn": 0.003
+    },
+    "V_no_detectados": {
+      "baseline_xgb": {
+        "V_totales": 3219,
+        "V_como_N": 58,
+        "peores_registros": {
+          "210": 22,
+          "213": 14,
+          "105": 6
+        }
+      },
+      "cnn": {
+        "V_totales": 3219,
+        "V_como_N": 35,
+        "peores_registros": {
+          "210": 14,
+          "200": 7,
+          "233": 6
+        }
+      }
+    },
+    "record_105_ruido": {
+      "latidos": 2565,
+      "baseline_xgb": {
+        "errores": 32
+      },
+      "cnn": {
+        "errores": 341
+      }
+    },
+    "por_ritmo": {
+      "(N": {
+        "latidos": 36159,
+        "baseline_xgb": {
+          "N_Se": 0.915,
+          "S_Se": 0.72,
+          "V_Se": 0.962
+        },
+        "cnn": {
+          "N_Se": 0.766,
+          "S_Se": 0.615,
+          "V_Se": 0.963
+        }
+      },
+      "(AFIB": {
+        "latidos": 7872,
+        "baseline_xgb": {
+          "N_Se": 0.854,
+          "S_Se": 0.222,
+          "V_Se": 0.965
+        },
+        "cnn": {
+          "N_Se": 0.347,
+          "S_Se": 0.296,
+          "V_Se": 0.96
+        }
+      },
+      "(B": {
+        "latidos": 1915,
+        "baseline_xgb": {
+          "N_Se": 0.998,
+          "S_Se": NaN,
+          "V_Se": 0.975
+        },
+        "cnn": {
+          "N_Se": 0.936,
+          "S_Se": NaN,
+          "V_Se": 0.969
+        }
+      },
+      "(SBR": {
+        "latidos": 1778,
+        "baseline_xgb": {
+          "N_Se": 1.0,
+          "S_Se": 0.004,
+          "V_Se": NaN
+        },
+        "cnn": {
+          "N_Se": 0.997,
+          "S_Se": 0.559,
+          "V_Se": NaN
+        }
+      }
+    }
+  }
+}

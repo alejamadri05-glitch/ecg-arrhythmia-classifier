@@ -41,3 +41,10 @@ def test_per_record_metrics():
     records = np.array([1] * 5 + [2] * 5)
     pr = per_record_metrics(Y_TRUE, Y_PRED, records)
     assert pr.loc[1, "latidos"] == 5 and pr["errores"].sum() == int((Y_TRUE != Y_PRED).sum())
+
+
+def test_metrics_on_empty_input_do_not_crash():
+    """Un subconjunto vacío (p. ej. un registro ausente) devuelve NaN, no una excepción."""
+    empty = np.array([], dtype="<U1")
+    assert confusion(empty, empty).to_numpy().sum() == 0
+    assert per_class_metrics(empty, empty)["Se"].isna().all()

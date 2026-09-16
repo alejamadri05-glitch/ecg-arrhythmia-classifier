@@ -12,12 +12,19 @@ from ecg import config
 
 def confusion(y_true, y_pred, classes=config.CLASSES, normalize: bool = False) -> pd.DataFrame:
     """Matriz de confusión (filas = real, columnas = predicho). `normalize` normaliza por fila."""
-    cm = pd.crosstab(
-        pd.Categorical(y_true, categories=classes),
-        pd.Categorical(y_pred, categories=classes),
-        dropna=False,
-    ).astype(float if normalize else int)
-    cm.index.name, cm.columns.name = "real", "predicho"
+    classes = list(classes)
+    order = {c: i for i, c in enumerate(classes)}
+    counts = np.zeros((len(classes), len(classes)), dtype=np.int64)
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    if len(y_true):  # con una entrada vacía la matriz queda en ceros, no vacía
+        rows = np.array([order[v] for v in y_true])
+        cols = np.array([order[v] for v in y_pred])
+        np.add.at(counts, (rows, cols), 1)
+    cm = pd.DataFrame(
+        counts.astype(float if normalize else int),
+        index=pd.Index(classes, name="real"),
+        columns=pd.Index(classes, name="predicho"),
+    )
     if normalize:
         cm = cm.div(cm.sum(axis=1).replace(0, np.nan), axis=0)
     return cm
