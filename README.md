@@ -17,7 +17,9 @@ python -m ecg.segment          # descarga MIT-BIH (~100 MB) y genera data/proces
 python -m ecg.train baseline   # validación cruzada por paciente en DS1 + modelo final
 python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
 python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
-python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente (validada en DS1)
+python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente
+python -m ecg.external           # descarga INCART (~820 MB) para la validación externa
+python -m ecg.evaluate_external  # compara v1, v2 y la CNN en INCART
 pytest -q
 ```
 
@@ -79,10 +81,38 @@ Prueba de estrés, multiplicando los intervalos RR para simular un paciente más
 | Se de S, v1 | 0.319 | 0.247 | **0.133** |
 | Se de S, v2 | 0.370 | 0.370 | **0.370** |
 
-**Qué se puede afirmar:** v2 no depende de la frecuencia cardíaca basal y detecta más S en
-validación por paciente. **Qué no:** que sea mejor en DS2. Ese conjunto ya se usó una vez, y
-medir la v2 ahí sería elegir el modelo mirando el conjunto de prueba. **El resultado publicado
-sigue siendo el de v1**, y la mejora queda pendiente de validación externa (INCART).
+**Por qué no se mide la v2 en DS2:** ese conjunto ya se usó una vez y, sobre todo, la v2 se
+diseñó a partir de lo que se vio ahí. Medirla en DS2 sería elegir el modelo mirando el conjunto
+de prueba. Por eso la comparación se hizo con una base externa (abajo), y **el resultado
+publicado de DS2 sigue siendo el de v1**.
+
+### Validación externa: INCART
+
+Para comparar v1 y v2 de forma limpia hace falta una base que ninguna de las dos versiones haya
+influido. Se usó **INCART** (St Petersburg, PhysioNet): 75 pacientes, 175 718 latidos, 257 Hz y
+**sin derivación MLII** (se usa la II estándar). Los modelos siguen entrenados solo con DS1
+([`notebooks/06_external_validation.ipynb`](notebooks/06_external_validation.ipynb)).
+
+| Modelo | F1 macro | Se de S | +P de V | Errores |
+|---|---|---|---|---|
+| v1 (RR absoluto) | 0.617 | 0.794 | 0.905 | 7 323 |
+| **v2 (RR normalizado)** | **0.634** | **0.843** | **0.917** | **6 387 (−12.8 %)** |
+| CNN 1D | 0.464 | 0.639 | 0.652 | — |
+
+**Lo que muestra, con sus matices:**
+
+- **v2 es mejor que v1 en pacientes nuevos**, y por eso es el modelo por defecto. Pero la ventaja
+  **no es uniforme**: gana en 34 de 75 pacientes y la prueba de Wilcoxon pareada por paciente no
+  llega a significancia (p = 0.75). La mejora agregada viene de ganancias grandes en pocos
+  pacientes.
+- **La hipótesis original estaba incompleta.** Se esperaba que v2 ayudara con pacientes lentos
+  (el registro 232 de DS2), pero su ventaja correlaciona con frecuencias **altas**
+  (Spearman ρ = −0.28, p = 0.013). El mecanismo es el mismo —depender de la frecuencia basal—
+  pero actúa en las dos direcciones: a 135 lpm todos los latidos le parecen prematuros a v1.
+- **Los dos modelos rinden mejor acá que en DS2** (0.63 contra 0.51), pese al cambio de derivación.
+  No es que INCART sea más fácil: en DS2 el 75 % de los latidos S venía de un solo paciente
+  bradicárdico. **Lo que domina la métrica es qué pacientes hay, no el modelo.**
+- **La CNN queda última en los tres conjuntos**, siempre por falsas alarmas.
 
 ## Estado
 
@@ -96,6 +126,7 @@ sigue siendo el de v1**, y la mejora queda pendiente de validación externa (INC
 | 6 | API FastAPI + Docker + demo Streamlit | ⏳ |
 | 7 | Documentación estilo IEC 62304 / ISO 14971 | ⏳ |
 | 8 | README final y publicación | ⏳ |
+| + | Versión 2 del modelo y validación externa con INCART | ✅ |
 
 Latidos extraídos (difieren de los publicados por de Chazal et al. en ≤ 42 por clase: el primer
 y último latido de cada registro no tienen RR previo/siguiente):

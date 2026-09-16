@@ -1,0 +1,102 @@
+{
+  "aviso": "Proyecto educativo. No es un dispositivo médico.",
+  "dataset": {
+    "nombre": "INCART (St Petersburg, PhysioNet)",
+    "derivacion": "II",
+    "remuestreo": "257 -> 360 Hz",
+    "registros": 75,
+    "latidos": 175718,
+    "por_clase": {
+      "N": 153541,
+      "S": 1958,
+      "V": 20000,
+      "F": 219
+    },
+    "pacientes_fuera_del_rango_de_frecuencia_de_ds1": 14
+  },
+  "accuracy_prediciendo_siempre_N": 0.8738,
+  "modelos": {
+    "v1_rr_absoluto": {
+      "macro_f1": 0.6171,
+      "accuracy": 0.9583,
+      "N_Se": 0.9725,
+      "N_+P": 0.9904,
+      "N_F1": 0.9813,
+      "S_Se": 0.7937,
+      "S_+P": 0.3534,
+      "S_F1": 0.4891,
+      "V_Se": 0.8721,
+      "V_+P": 0.905,
+      "V_F1": 0.8883,
+      "F_Se": 0.3744,
+      "F_+P": 0.0642,
+      "F_F1": 0.1096
+    },
+    "v2_rr_normalizado": {
+      "macro_f1": 0.6338,
+      "accuracy": 0.9637,
+      "N_Se": 0.9789,
+      "N_+P": 0.9912,
+      "N_F1": 0.985,
+      "S_Se": 0.8427,
+      "S_+P": 0.3734,
+      "S_F1": 0.5175,
+      "V_Se": 0.8655,
+      "V_+P": 0.9171,
+      "V_F1": 0.8905,
+      "F_Se": 0.3288,
+      "F_+P": 0.0906,
+      "F_F1": 0.142
+    },
+    "cnn": {
+      "macro_f1": 0.4636,
+      "accuracy": 0.8186,
+      "N_Se": 0.8237,
+      "N_+P": 0.9948,
+      "N_F1": 0.9012,
+      "S_Se": 0.6389,
+      "S_+P": 0.1342,
+      "S_F1": 0.2218,
+      "V_Se": 0.8008,
+      "V_+P": 0.6522,
+      "V_F1": 0.7189,
+      "F_Se": 0.4201,
+      "F_+P": 0.0063,
+      "F_F1": 0.0123
+    }
+  },
+  "S_por_frecuencia": {
+    "pacientes": {
+      "frecuencia como DS1": 61,
+      "fuera del rango de DS1": 14
+    },
+    "latidos_S": {
+      "frecuencia como DS1": 1889,
+      "fuera del rango de DS1": 69
+    },
+    "v1_rr_absoluto · S_Se": {
+      "frecuencia como DS1": 0.803,
+      "fuera del rango de DS1": 0.551
+    },
+    "v1_rr_absoluto · S_+P": {
+      "frecuencia como DS1": 0.408,
+      "fuera del rango de DS1": 0.056
+    },
+    "v2_rr_normalizado · S_Se": {
+      "frecuencia como DS1": 0.851,
+      "fuera del rango de DS1": 0.609
+    },
+    "v2_rr_normalizado · S_+P": {
+      "frecuencia como DS1": 0.403,
+      "fuera del rango de DS1": 0.098
+    },
+    "cnn · S_Se": {
+      "frecuencia como DS1": 0.627,
+      "fuera del rango de DS1": 0.971
+    },
+    "cnn · S_+P": {
+      "frecuencia como DS1": 0.17,
+      "fuera del rango de DS1": 0.028
+    }
+  }
+}
