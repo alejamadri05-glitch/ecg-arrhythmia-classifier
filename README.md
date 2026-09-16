@@ -20,6 +20,7 @@ python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
 python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente
 python -m ecg.external           # descarga INCART (~820 MB) para la validación externa
 python -m ecg.evaluate_external  # compara v1, v2 y la CNN en INCART
+python -m ecg.train baseline-v3  # versión 3: 3 clases (F fuera de alcance)
 pytest -q
 ```
 
@@ -114,6 +115,30 @@ influido. Se usó **INCART** (St Petersburg, PhysioNet): 75 pacientes, 175 718 l
   bradicárdico. **Lo que domina la métrica es qué pacientes hay, no el modelo.**
 - **La CNN queda última en los tres conjuntos**, siempre por falsas alarmas.
 
+### Versión 3: sacar la clase F y probar calibración de umbrales
+
+A partir del análisis de errores de la v2 se probaron las dos correcciones más baratas
+([`notebooks/07_calibration.ipynb`](notebooks/07_calibration.ipynb)), decididas y validadas solo
+con validación cruzada por paciente en DS1:
+
+| Variante | F1 macro (3 clases) | V no detectados (RISK-01) | Errores totales |
+|---|---|---|---|
+| v2, con la salida restringida a N/S/V | 0.644 | 311 | 5 137 |
+| **v3: 3 clases, sin F** | **0.649** | **298** | 5 050 |
+| v3 + umbrales calibrados | 0.654 | 377 | 4 657 |
+
+- **Sacar F: sí.** Cambia poco la métrica, pero elimina una clase cuya +P nunca superó 0.09 y que
+  producía miles de falsas alarmas (3 049 en DS2). Pasa a estar declarada fuera del alcance.
+- **Calibrar umbrales: no.** Reduce los errores totales un 7.8 %, pero **deja un 27 % más de
+  latidos ventriculares sin detectar**, que es el error de mayor severidad en el análisis de
+  riesgo. Además, los pesos óptimos son inestables entre folds (el de S va de 1.6 a 4.0). Queda
+  implementada y desactivada (`--calibrate`), con el intercambio documentado.
+
+**Una lección de método que salió de acá:** la primera corrida indicaba que sacar F empeoraba todo.
+Era un artefacto: `GroupKFold` equilibra por cantidad de latidos, así que al filtrar los latidos F
+**9 de 22 pacientes cambiaban de fold**. El reparto quedó congelado en `config.DS1_FOLD_MAP`, con
+una prueba que lo verifica.
+
 ## Estado
 
 | Fase | Contenido | Estado |
@@ -127,6 +152,7 @@ influido. Se usó **INCART** (St Petersburg, PhysioNet): 75 pacientes, 175 718 l
 | 7 | Documentación estilo IEC 62304 / ISO 14971 | ⏳ |
 | 8 | README final y publicación | ⏳ |
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
+| + | Versión 3: 3 clases y estudio de calibración | ✅ |
 
 Latidos extraídos (difieren de los publicados por de Chazal et al. en ≤ 42 por clase: el primer
 y último latido de cada registro no tienen RR previo/siguiente):

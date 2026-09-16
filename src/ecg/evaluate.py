@@ -17,6 +17,12 @@ def confusion(y_true, y_pred, classes=config.CLASSES, normalize: bool = False) -
     counts = np.zeros((len(classes), len(classes)), dtype=np.int64)
     y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     if len(y_true):  # con una entrada vacía la matriz queda en ceros, no vacía
+        desconocidas = {v for v in np.concatenate([y_true, y_pred]) if v not in order}
+        if desconocidas:
+            raise ValueError(
+                f"Etiquetas fuera de {classes}: {sorted(desconocidas)}. "
+                "Reasigná o filtrá esas clases antes de medir."
+            )
         rows = np.array([order[v] for v in y_true])
         cols = np.array([order[v] for v in y_pred])
         np.add.at(counts, (rows, cols), 1)

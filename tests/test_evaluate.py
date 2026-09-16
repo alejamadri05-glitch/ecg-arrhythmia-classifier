@@ -48,3 +48,8 @@ def test_metrics_on_empty_input_do_not_crash():
     empty = np.array([], dtype="<U1")
     assert confusion(empty, empty).to_numpy().sum() == 0
     assert per_class_metrics(empty, empty)["Se"].isna().all()
+
+
+def test_unknown_label_raises_a_clear_error():
+    with pytest.raises(ValueError, match="Etiquetas fuera de"):
+        confusion(np.array(["N", "S"]), np.array(["N", "F"]), classes=["N", "S", "V"])

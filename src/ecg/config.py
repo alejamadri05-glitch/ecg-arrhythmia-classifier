@@ -48,3 +48,15 @@ DS2 = [
 ]  # fmt: skip
 # Registros con marcapasos: excluidos según AAMI EC57
 PACED = [102, 104, 107, 217]
+
+# Reparto fijo de pacientes en los 5 folds de validación (GroupKFold sobre DS1 completo).
+# Se congela para que cualquier experimento sobre un subconjunto de DS1 (por ejemplo, sin la
+# clase F) use exactamente los mismos folds: GroupKFold equilibra por cantidad de latidos, así
+# que al filtrar latidos cambiaría el reparto y las comparaciones dejarían de ser válidas.
+DS1_FOLD_MAP = {
+    116: 0, 119: 0, 207: 0, 215: 0,
+    101: 1, 122: 1, 209: 1, 230: 1,
+    106: 2, 109: 2, 201: 2, 203: 2,
+    108: 3, 112: 3, 114: 3, 208: 3, 220: 3,
+    115: 4, 118: 4, 124: 4, 205: 4, 223: 4,
+}  # fmt: skip

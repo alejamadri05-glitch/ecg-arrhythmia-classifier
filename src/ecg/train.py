@@ -4,6 +4,7 @@ DS2 no se usa en ningún lugar de este módulo: se evalúa una sola vez en la fa
 
 Uso:  python -m ecg.train baseline [--kind xgb|rf]
       python -m ecg.train baseline-v2
+      python -m ecg.train baseline-v3   # 3 clases + umbrales calibrados
       python -m ecg.train cnn [--skip-cv]
 """
 
@@ -18,6 +19,7 @@ import numpy as np
 from sklearn.model_selection import GroupKFold
 
 from ecg import config
+from ecg.calibrate import DEFAULT_GRID, apply_weights, tune_decision_weights
 from ecg.evaluate import per_class_metrics, summary
 from ecg.features import build_features
 from ecg.models.baseline import BaselineClassifier
@@ -44,13 +46,40 @@ BASELINE_V2_CHOICE = {
     "params": {},
 }
 
+# Versión 3 (notebooks/07_calibration.ipynb): 3 clases (F fuera de alcance) + umbrales
+# calibrados. Validada solo en DS1.
+CLASSES_V3 = ["N", "S", "V"]
+BASELINE_V3_CHOICE = {
+    "kind": "xgb",
+    "feature_set": "rr_norm+morph+wave",
+    "weight_power": 1.0,
+    "params": {},
+    # Sin calibración: en notebooks/07_calibration.ipynb la calibración gana 0.005 de F1 macro
+    # pero deja 79 latidos V sin detectar (+26 %), y sus pesos son inestables entre folds.
+    "calibrate": False,
+}
+
 # Configuración elegida en notebooks/03_cnn.ipynb (mayor F1 macro media en 2 semillas)
 CNN_CHOICE = {"rr": "ratios", "balance": "weights", "augment": True, "invert": False}
 
 
-def patient_folds(groups: np.ndarray, n_splits: int = N_FOLDS):
-    """Folds por registro: todos los latidos de un paciente caen del mismo lado."""
-    return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(groups)), groups=groups))
+def patient_folds(
+    groups: np.ndarray, n_splits: int = N_FOLDS, fold_map: dict[int, int] | None = None
+):
+    """Folds por registro: todos los latidos de un paciente caen del mismo lado.
+
+    `fold_map` (p. ej. `config.DS1_FOLD_MAP`) fija a qué fold va cada paciente. Es necesario al
+    comparar experimentos sobre subconjuntos distintos de latidos: GroupKFold equilibra por
+    cantidad de latidos, así que filtrar una clase cambiaría el reparto de pacientes.
+    """
+    if fold_map is None:
+        return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(groups)), groups=groups))
+    faltantes = {int(r) for r in np.unique(groups)} - set(fold_map)
+    if faltantes:
+        raise ValueError(f"Registros sin fold asignado: {sorted(faltantes)}")
+    fold_of = np.array([fold_map[int(r)] for r in groups])
+    folds = sorted(set(fold_map.values()))
+    return [(np.flatnonzero(fold_of != k), np.flatnonzero(fold_of == k)) for k in folds]
 
 
 def cross_validate(
@@ -59,6 +88,7 @@ def cross_validate(
     y: np.ndarray,
     groups: np.ndarray,
     n_splits: int = N_FOLDS,
+    fold_map: dict[int, int] | None = None,
 ) -> dict[str, np.ndarray]:
     """Predicciones out-of-fold: cada latido lo predice un modelo que no vio a su paciente.
 
@@ -68,12 +98,107 @@ def cross_validate(
     classes = list(config.CLASSES)
     proba = np.zeros((len(y), len(classes)), dtype=np.float32)
     fold = np.full(len(y), -1, dtype=np.int8)
-    for k, (tr, va) in enumerate(patient_folds(groups, n_splits)):
+    for k, (tr, va) in enumerate(patient_folds(groups, n_splits, fold_map)):
         assert set(groups[tr]).isdisjoint(groups[va])
         model = make_model().fit(Z[tr], y[tr])
         proba[va] = model.predict_proba(Z[va])
         fold[va] = k
     return {"proba": proba, "pred": np.asarray(classes)[proba.argmax(axis=1)], "fold": fold}
+
+
+def cross_validate_calibrated(
+    make_model: Callable[[], object],
+    Z: np.ndarray,
+    y: np.ndarray,
+    groups: np.ndarray,
+    classes: list[str],
+    n_splits: int = N_FOLDS,
+    inner_splits: int = 4,
+    grid: np.ndarray = DEFAULT_GRID,
+    fold_map: dict[int, int] | None = None,
+) -> dict:
+    """Out-of-fold con umbrales calibrados, en **validación anidada**.
+
+    Dentro de cada fold de entrenamiento se hace otra validación por paciente; los umbrales se
+    ajustan con esas predicciones internas y recién después se aplican al fold externo, que no
+    participó ni del entrenamiento ni de la calibración.
+    """
+    proba = np.zeros((len(y), len(classes)), dtype=np.float32)
+    pred = np.empty(len(y), dtype="<U1")
+    fold_weights = []
+    for tr, va in patient_folds(groups, n_splits, fold_map):
+        inner_proba = np.zeros((len(tr), len(classes)), dtype=np.float32)
+        for itr, iva in patient_folds(groups[tr], inner_splits):
+            inner_proba[iva] = make_model().fit(Z[tr][itr], y[tr][itr]).predict_proba(Z[tr][iva])
+        weights = tune_decision_weights(inner_proba, y[tr], classes, grid)
+        model = make_model().fit(Z[tr], y[tr])
+        proba[va] = model.predict_proba(Z[va])
+        pred[va] = apply_weights(proba[va], weights, classes)
+        fold_weights.append(weights)
+    return {"proba": proba, "pred": pred, "weights": fold_weights}
+
+
+def train_baseline_v3(calibrate: bool = BASELINE_V3_CHOICE["calibrate"]) -> None:
+    """3 clases (N/S/V): la clase F queda fuera del alcance. Todo se decide dentro de DS1.
+
+    `calibrate` activa los umbrales por clase (ver notebooks/07_calibration.ipynb). Está
+    desactivado por defecto: mejora el F1 macro en 0.005 y empeora el error más grave.
+    """
+    c = BASELINE_V3_CHOICE
+    ds1 = load_split("ds1")
+    keep = ds1["y"] != "F"  # la clase F queda fuera del alcance (ver docs/intended_use.md)
+    y, groups = ds1["y"][keep], ds1["record"][keep]
+    Z, names = build_features(ds1["X"][keep], ds1["F"][keep], c["feature_set"], records=groups)
+
+    def make():
+        return BaselineClassifier(
+            kind=c["kind"], params=c["params"], feature_set=c["feature_set"],
+            weight_power=c["weight_power"], classes=list(CLASSES_V3),
+        )  # fmt: skip
+
+    t0 = time.time()
+    cv = cross_validate_calibrated(make, Z, y, groups, CLASSES_V3, fold_map=config.DS1_FOLD_MAP)
+    pred = cv["pred"] if calibrate else np.asarray(CLASSES_V3)[cv["proba"].argmax(axis=1)]
+    print(f"CV anidada, {N_FOLDS} folds por paciente ({time.time() - t0:.0f} s)")
+    print(per_class_metrics(y, pred, CLASSES_V3).round(3).to_string())
+    cv_summary = summary(y, pred, CLASSES_V3)
+    print(f"F1 macro: {cv_summary['macro_f1']:.3f} | "
+          f"latidos V leídos como N: {int(((y == 'V') & (pred == 'N')).sum())}")  # fmt: skip
+
+    weights = None
+    if calibrate:  # umbrales del modelo final, ajustados con validación interna sobre todo DS1
+        inner_proba = np.zeros((len(y), len(CLASSES_V3)), dtype=np.float32)
+        for itr, iva in patient_folds(groups, 4):
+            inner_proba[iva] = make().fit(Z[itr], y[itr]).predict_proba(Z[iva])
+        weights = tune_decision_weights(inner_proba, y, CLASSES_V3)
+    model = make().fit(Z, y)
+    model.decision_weights = weights
+
+    config.MODELS_DIR.mkdir(exist_ok=True)
+    config.REPORTS_DIR.mkdir(exist_ok=True)
+    path = config.MODELS_DIR / "baseline_v3.joblib"
+    model.save(path)
+    meta = {
+        "model": "baseline_v3",
+        "classes": CLASSES_V3,
+        "fuera_de_alcance": ["F"],
+        "feature_set": c["feature_set"],
+        "feature_names": names,
+        "decision_weights": weights,
+        "calibrado": calibrate,
+        "weight_power": c["weight_power"],
+        "train_records": sorted(int(r) for r in np.unique(groups)),
+        "seed": config.SEED,
+        "cv": {
+            "n_folds": N_FOLDS,
+            "grouping": "record",
+            "calibracion": "anidada (4 folds internos)" if calibrate else "sin calibrar",
+            "calibrado_referencia": summary(y, cv["pred"], CLASSES_V3),
+            **cv_summary,
+        },
+    }
+    (config.REPORTS_DIR / "baseline_v3_cv.json").write_text(json.dumps(meta, indent=2))
+    print(f"Umbrales: {weights or 'sin calibrar'}\nModelo -> {path}")
 
 
 def train_baseline(
@@ -194,13 +319,19 @@ def train_cnn(cfg: CNNConfig, skip_cv: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", choices=["baseline", "baseline-v2", "cnn"])
+    parser.add_argument("model", choices=["baseline", "baseline-v2", "baseline-v3", "cnn"])
     parser.add_argument("--kind", choices=["xgb", "rf"], default=BASELINE_CHOICE["kind"])
     parser.add_argument("--feature-set", default=BASELINE_CHOICE["feature_set"])
     parser.add_argument("--skip-cv", action="store_true", help="CNN: solo el modelo final")
+    parser.add_argument(
+        "--calibrate", action="store_true", help="v3: activar los umbrales por clase"
+    )
     args = parser.parse_args()
     if args.model == "cnn":
         train_cnn(CNNConfig(**CNN_CHOICE), skip_cv=args.skip_cv)
+        return
+    if args.model == "baseline-v3":
+        train_baseline_v3(calibrate=args.calibrate)
         return
     if args.model == "baseline-v2":
         c = BASELINE_V2_CHOICE

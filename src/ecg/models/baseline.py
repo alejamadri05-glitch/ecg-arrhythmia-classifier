@@ -50,6 +50,9 @@ class BaselineClassifier:
     weight_power: float = 1.0
     seed: int = config.SEED
     classes: list[str] = field(default_factory=lambda: list(config.CLASSES))
+    # Umbrales calibrados: cada probabilidad se multiplica por el peso de su clase antes del
+    # argmax. None = argmax normal. Ver ecg.calibrate.
+    decision_weights: dict[str, float] | None = None
 
     def _make(self):
         if self.kind == "rf":
@@ -84,7 +87,11 @@ class BaselineClassifier:
         return out
 
     def predict(self, Z: np.ndarray) -> np.ndarray:
-        return np.asarray(self.classes)[self.predict_proba(Z).argmax(axis=1)]
+        proba = self.predict_proba(Z)
+        if self.decision_weights:
+            w = np.array([self.decision_weights.get(c, 1.0) for c in self.classes])
+            proba = proba * w
+        return np.asarray(self.classes)[proba.argmax(axis=1)]
 
     def feature_importances(self) -> np.ndarray:
         return self.model_.feature_importances_
