@@ -20,6 +20,15 @@ def _ms(ms: float) -> int:
     return round(ms * FS / 1000)
 
 
+def qrs_width(X: np.ndarray) -> np.ndarray:
+    """Ancho aproximado del QRS (ms): extensión donde la pendiente supera el 20 % de la máxima."""
+    d = np.abs(np.diff(X[:, R - _ms(100) : R + _ms(120)], axis=1))
+    above = d > 0.2 * d.max(axis=1, keepdims=True)
+    first = above.argmax(axis=1)
+    last = above.shape[1] - 1 - above[:, ::-1].argmax(axis=1)
+    return (last - first + 1) * 1000 / FS
+
+
 def morphology_features(X: np.ndarray) -> tuple[np.ndarray, list[str]]:
     """Features de forma del latido: QRS, onda P, onda T y estadísticos de la ventana."""
     base = np.median(X, axis=1, keepdims=True)  # la mayor parte de la ventana es isoeléctrica
@@ -29,12 +38,7 @@ def morphology_features(X: np.ndarray) -> tuple[np.ndarray, list[str]]:
     p_region = slice(0, R - _ms(100))  # -250 a -100 ms
     t_region = slice(R + _ms(150), X.shape[1])  # +150 a +450 ms
 
-    # Ancho aproximado del QRS: extensión donde la pendiente supera el 20 % de la máxima.
-    d = np.abs(np.diff(X[:, R - _ms(100) : R + _ms(120)], axis=1))
-    above = d > 0.2 * d.max(axis=1, keepdims=True)
-    first = above.argmax(axis=1)
-    last = above.shape[1] - 1 - above[:, ::-1].argmax(axis=1)
-    qrs_width_ms = (last - first + 1) * 1000 / FS
+    qrs_width_ms = qrs_width(X)
 
     seg_qrs = X[:, qrs]
     offset = np.arange(seg_qrs.shape[1]) - _ms(100)
@@ -92,6 +96,93 @@ def normalized_rr(F: np.ndarray, records: np.ndarray | None = None) -> tuple[np.
     return out, ["pre_rr_over_median", "post_rr_over_median"]
 
 
+def patient_template(
+    X: np.ndarray,
+    records: np.ndarray | None = None,
+    max_beats: int | None = None,
+    block: int | None = None,
+) -> np.ndarray:
+    """Latido dominante de cada paciente: la mediana de sus latidos.
+
+    No usa etiquetas, así que la API puede calcularlo con el ECG que recibe. La mediana es
+    robusta mientras la morfología habitual sea mayoría; en un paciente con más de la mitad de
+    latidos anormales la plantilla se contamina (limitación documentada en el model card).
+
+    `max_beats` usa solo los primeros N latidos de cada registro, como haría un sistema que
+    calcula la plantilla una sola vez al inicio. `block` la recalcula cada N latidos (plantilla
+    local), que rinde mejor: la morfología deriva a lo largo de una grabación de 30 minutos, así
+    que una plantilla del arranque queda vieja.
+    """
+    if max_beats and block:
+        raise ValueError("`max_beats` y `block` son alternativas, no se combinan")
+    template = np.empty_like(X)
+    grupos = (
+        [np.arange(len(X))]
+        if records is None
+        else [np.flatnonzero(records == rec) for rec in np.unique(records)]
+    )
+    for idx in grupos:
+        if block:
+            for i in range(0, len(idx), block):
+                b = idx[i : i + block]
+                template[b] = np.median(X[b], axis=0)
+        else:
+            template[idx] = np.median(X[idx[:max_beats]], axis=0)
+    return template
+
+
+def _row_correlation(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    a = a - a.mean(axis=1, keepdims=True)
+    b = b - b.mean(axis=1, keepdims=True)
+    denom = np.sqrt((a**2).sum(axis=1) * (b**2).sum(axis=1)) + 1e-8
+    return (a * b).sum(axis=1) / denom
+
+
+def relative_morphology_features(
+    X: np.ndarray,
+    records: np.ndarray | None = None,
+    max_beats: int | None = None,
+    template: np.ndarray | None = None,
+    block: int | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    """Describe cada latido **relativo al latido dominante de su paciente**.
+
+    Es la misma idea de `normalized_rr`, pero aplicada a la forma en vez del ritmo: lo que
+    distingue a un latido anormal no es su morfología absoluta (que cambia entre personas y entre
+    derivaciones) sino en cuánto se aparta de la morfología habitual de esa persona.
+    """
+    if template is None:
+        template = patient_template(X, records, max_beats, block)
+    residual = X - template
+    qrs = slice(R - _ms(100), R + _ms(100))
+    ancho_latido, ancho_plantilla = qrs_width(X), qrs_width(template)
+    feats = {
+        "corr_plantilla": _row_correlation(X, template),
+        "corr_plantilla_qrs": _row_correlation(X[:, qrs], template[:, qrs]),
+        "rms_residuo": np.sqrt((residual**2).mean(axis=1)),
+        "rms_residuo_qrs": np.sqrt((residual[:, qrs] ** 2).mean(axis=1)),
+        "max_residuo": np.abs(residual).max(axis=1),
+        "r_amp_menos_plantilla": X[:, R] - template[:, R],
+        "qrs_ancho_sobre_plantilla": ancho_latido / np.maximum(ancho_plantilla, 1e-3),
+    }
+    return np.column_stack(list(feats.values())).astype(np.float32), list(feats)
+
+
+def residual_waveform_features(
+    X: np.ndarray,
+    records: np.ndarray | None = None,
+    bins: int = WAVE_BINS,
+    max_beats: int | None = None,
+    template: np.ndarray | None = None,
+    block: int | None = None,
+) -> tuple[np.ndarray, list[str]]:
+    """El latido residual (latido − plantilla del paciente), submuestreado."""
+    if template is None:
+        template = patient_template(X, records, max_beats, block)
+    wave, names = waveform_features(X - template, bins)
+    return wave, [n.replace("wave_", "residuo_") for n in names]
+
+
 FEATURE_SETS = {
     "rr": ["rr"],
     "rr_ratios": ["rr_ratios"],
@@ -102,6 +193,10 @@ FEATURE_SETS = {
     "rr_ratios+morph+wave": ["rr_ratios", "morph", "wave"],
     # Versión 2: RR normalizado por la mediana del registro + cocientes
     "rr_norm+morph+wave": ["rr_norm", "rr_ratios", "morph", "wave"],
+    # Idea 3: morfología relativa al latido dominante del paciente
+    "rr_norm+morph+rel+wave": ["rr_norm", "rr_ratios", "morph", "rel", "wave"],
+    "rr_norm+rel": ["rr_norm", "rr_ratios", "rel"],
+    "rr_norm+morph+rel+wave_rel": ["rr_norm", "rr_ratios", "morph", "rel", "wave_rel"],
 }
 
 
@@ -110,10 +205,16 @@ def build_features(
     F: np.ndarray,
     feature_set: str = "rr+morph+wave",
     records: np.ndarray | None = None,
+    template_beats: int | None = None,
+    template: np.ndarray | None = None,
+    template_block: int | None = None,
 ) -> tuple[np.ndarray, list[str]]:
     """Matriz de features para un conjunto con nombre (ver FEATURE_SETS).
 
-    `records` solo se usa en los conjuntos con `rr_norm`, para normalizar por registro.
+    `records` se usa en los conjuntos con `rr_norm` (normalizar el ritmo por registro) y con
+    `rel`/`wave_rel` (comparar cada latido con la plantilla de su paciente). `template_beats`
+    limita la plantilla a los primeros N latidos de cada registro y `template_block` la recalcula
+    cada N latidos (lo que usa la v4).
     """
     blocks, names = [], []
     for part in FEATURE_SETS[feature_set]:
@@ -128,7 +229,17 @@ def build_features(
         elif part == "morph":
             m, n = morphology_features(X)
             blocks.append(m), names.extend(n)
+        elif part == "rel":
+            r, n = relative_morphology_features(
+                X, records, template_beats, template, template_block
+            )
+            blocks.append(r), names.extend(n)
         elif part == "wave":
             w, n = waveform_features(X)
+            blocks.append(w), names.extend(n)
+        elif part == "wave_rel":
+            w, n = residual_waveform_features(
+                X, records, max_beats=template_beats, template=template, block=template_block
+            )
             blocks.append(w), names.extend(n)
     return np.hstack(blocks).astype(np.float32), names

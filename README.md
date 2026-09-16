@@ -21,6 +21,7 @@ python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente
 python -m ecg.external           # descarga INCART (~820 MB) para la validación externa
 python -m ecg.evaluate_external  # compara v1, v2 y la CNN en INCART
 python -m ecg.train baseline-v3  # versión 3: 3 clases (F fuera de alcance)
+python -m ecg.train baseline-v4  # versión 4: morfología relativa al paciente
 pytest -q
 ```
 
@@ -139,6 +140,37 @@ Era un artefacto: `GroupKFold` equilibra por cantidad de latidos, así que al fi
 **9 de 22 pacientes cambiaban de fold**. El reparto quedó congelado en `config.DS1_FOLD_MAP`, con
 una prueba que lo verifica.
 
+### Versión 4: morfología relativa al paciente
+
+La mejora más grande del proyecto ([`notebooks/08_patient_relative.ipynb`](notebooks/08_patient_relative.ipynb)).
+Es la misma idea que funcionó con el ritmo, aplicada a la forma: en vez de describir el latido en
+absoluto, se lo describe **relativo al latido dominante de esa persona** (la mediana de sus
+latidos, calculada sin usar etiquetas y refrescada cada 100 latidos).
+
+| | v3 | **v4** |
+|---|---|---|
+| F1 macro (3 clases) | 0.649 | **0.725** |
+| Se de V | 0.914 | **0.953** |
+| **+P de V** | 0.471 | **0.832** |
+| Latidos V no detectados (RISK-01) | 298 | **166** |
+| Errores totales | 5 050 | **2 355** |
+| F1 de S | 0.379 | 0.311 |
+
+**Resuelve el peor modo de falla del proyecto.** Los latidos con bloqueo de rama izquierda del
+registro 207 pasan de **2.7 % a 99.9 %** correctos, y sus falsas alarmas de 1 419 a 2: esos latidos
+son anchos y raros para la población, pero son la morfología **normal de ese paciente**.
+
+**Con dos costos honestos:** la clase S empeora un poco (su morfología es normal por definición,
+así que estas features no la ayudan), y el método supone que la morfología habitual del paciente es
+mayoría — en INCART hay 5 registros con más del 40 % de latidos anormales.
+
+**Cuánta señal necesita:** una plantilla calculada solo al inicio **no sirve** (con los primeros 30
+latidos el resultado es el de v3), porque la morfología deriva durante la grabación. Con bloques
+locales de 20 latidos ya alcanza. La variante **causal**, apta para tiempo real, obtiene 0.715.
+
+⚠️ **v4 está validada solo en DS1.** DS2 ya se usó una vez e INCART se gastó comparando v1 con v2.
+Confirmar una mejora de este tamaño requiere una base nueva (SVDB es la candidata).
+
 ## Estado
 
 | Fase | Contenido | Estado |
@@ -153,6 +185,7 @@ una prueba que lo verifica.
 | 8 | README final y publicación | ⏳ |
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
 | + | Versión 3: 3 clases y estudio de calibración | ✅ |
+| + | Versión 4: morfología relativa al paciente | ✅ |
 
 Latidos extraídos (difieren de los publicados por de Chazal et al. en ≤ 42 por clase: el primer
 y último latido de cada registro no tienen RR previo/siguiente):

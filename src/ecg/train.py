@@ -4,7 +4,8 @@ DS2 no se usa en ningún lugar de este módulo: se evalúa una sola vez en la fa
 
 Uso:  python -m ecg.train baseline [--kind xgb|rf]
       python -m ecg.train baseline-v2
-      python -m ecg.train baseline-v3   # 3 clases + umbrales calibrados
+      python -m ecg.train baseline-v3   # 3 clases
+      python -m ecg.train baseline-v4   # 3 clases + morfología relativa al paciente
       python -m ecg.train cnn [--skip-cv]
 """
 
@@ -59,6 +60,16 @@ BASELINE_V3_CHOICE = {
     "calibrate": False,
 }
 
+# Versión 4 (notebooks/08_patient_relative.ipynb): morfología relativa al latido dominante del
+# paciente, con plantilla local recalculada cada 100 latidos. Validada solo en DS1.
+BASELINE_V4_CHOICE = {
+    "kind": "xgb",
+    "feature_set": "rr_norm+morph+rel+wave",
+    "weight_power": 1.0,
+    "params": {},
+    "template_block": 100,
+}
+
 # Configuración elegida en notebooks/03_cnn.ipynb (mayor F1 macro media en 2 semillas)
 CNN_CHOICE = {"rr": "ratios", "balance": "weights", "augment": True, "invert": False}
 
@@ -89,13 +100,14 @@ def cross_validate(
     groups: np.ndarray,
     n_splits: int = N_FOLDS,
     fold_map: dict[int, int] | None = None,
+    classes: list[str] | None = None,
 ) -> dict[str, np.ndarray]:
     """Predicciones out-of-fold: cada latido lo predice un modelo que no vio a su paciente.
 
     Las métricas se calculan sobre todas las predicciones juntas (estadística "gross" de AAMI),
     porque la clase F está casi entera en un solo registro y un F1 por fold no estaría definido.
     """
-    classes = list(config.CLASSES)
+    classes = list(classes or config.CLASSES)
     proba = np.zeros((len(y), len(classes)), dtype=np.float32)
     fold = np.full(len(y), -1, dtype=np.int8)
     for k, (tr, va) in enumerate(patient_folds(groups, n_splits, fold_map)):
@@ -207,24 +219,32 @@ def train_baseline(
     params: dict,
     weight_power: float = 1.0,
     model_name: str | None = None,
+    classes: list[str] | None = None,
+    template_block: int | None = None,
 ) -> None:
     ds1 = load_split("ds1")
-    y, groups = ds1["y"], ds1["record"]
-    # `records` solo lo usan los conjuntos con RR normalizado por registro
-    Z, names = build_features(ds1["X"], ds1["F"], feature_set, records=groups)
+    classes = list(classes or config.CLASSES)
+    keep = np.isin(ds1["y"], classes)  # las clases fuera de alcance no se entrenan ni se miden
+    y, groups = ds1["y"][keep], ds1["record"][keep]
+    # `records` lo usan los conjuntos con RR normalizado y con morfología relativa al paciente
+    Z, names = build_features(
+        ds1["X"][keep], ds1["F"][keep], feature_set, records=groups, template_block=template_block
+    )
     model_name = model_name or f"baseline_{kind}"
 
     def make():
         return BaselineClassifier(
-            kind=kind, params=params, feature_set=feature_set, weight_power=weight_power
-        )
+            kind=kind, params=params, feature_set=feature_set, weight_power=weight_power,
+            classes=list(classes),
+        )  # fmt: skip
 
     t0 = time.time()
-    cv = cross_validate(make, Z, y, groups)
-    cv_summary = summary(y, cv["pred"])
+    cv = cross_validate(make, Z, y, groups, fold_map=config.DS1_FOLD_MAP, classes=list(classes))
+    cv_summary = summary(y, cv["pred"], classes)
     print(f"CV {N_FOLDS} folds por paciente ({time.time() - t0:.0f} s)")
-    print(per_class_metrics(y, cv["pred"]).round(3).to_string())
-    print(f"F1 macro: {cv_summary['macro_f1']:.3f}")
+    print(per_class_metrics(y, cv["pred"], classes).round(3).to_string())
+    print(f"F1 macro: {cv_summary['macro_f1']:.3f} | "
+          f"latidos V leídos como N: {int(((y == 'V') & (cv['pred'] == 'N')).sum())}")  # fmt: skip
 
     model = make().fit(Z, y)  # modelo final: todo DS1
     config.MODELS_DIR.mkdir(exist_ok=True)
@@ -233,8 +253,10 @@ def train_baseline(
     model.save(path)
     meta = {
         "model": model_name,
+        "classes": classes,
         "feature_set": feature_set,
         "feature_names": names,
+        "template_block": template_block,
         "params": params,
         "weight_power": weight_power,
         "train_records": sorted(int(r) for r in np.unique(groups)),
@@ -319,7 +341,9 @@ def train_cnn(cfg: CNNConfig, skip_cv: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", choices=["baseline", "baseline-v2", "baseline-v3", "cnn"])
+    parser.add_argument(
+        "model", choices=["baseline", "baseline-v2", "baseline-v3", "baseline-v4", "cnn"]
+    )
     parser.add_argument("--kind", choices=["xgb", "rf"], default=BASELINE_CHOICE["kind"])
     parser.add_argument("--feature-set", default=BASELINE_CHOICE["feature_set"])
     parser.add_argument("--skip-cv", action="store_true", help="CNN: solo el modelo final")
@@ -329,6 +353,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.model == "cnn":
         train_cnn(CNNConfig(**CNN_CHOICE), skip_cv=args.skip_cv)
+        return
+    if args.model == "baseline-v4":
+        c = BASELINE_V4_CHOICE
+        train_baseline(c["kind"], c["feature_set"], c["params"], c["weight_power"],
+                       "baseline_v4", CLASSES_V3, c["template_block"])  # fmt: skip
         return
     if args.model == "baseline-v3":
         train_baseline_v3(calibrate=args.calibrate)

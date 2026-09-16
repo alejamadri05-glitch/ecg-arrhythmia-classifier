@@ -1,15 +1,14 @@
 {
-  "model": "baseline_xgb",
+  "model": "baseline_v4",
   "classes": [
     "N",
     "S",
-    "V",
-    "F"
+    "V"
   ],
-  "feature_set": "rr+morph+wave",
+  "feature_set": "rr_norm+morph+rel+wave",
   "feature_names": [
-    "pre_rr",
-    "post_rr",
+    "pre_rr_over_median",
+    "post_rr_over_median",
     "pre_rr_over_local",
     "post_over_pre_rr",
     "r_amp",
@@ -28,6 +27,13 @@
     "t_min",
     "skewness",
     "kurtosis",
+    "corr_plantilla",
+    "corr_plantilla_qrs",
+    "rms_residuo",
+    "rms_residuo_qrs",
+    "max_residuo",
+    "r_amp_menos_plantilla",
+    "qrs_ancho_sobre_plantilla",
     "wave_-233ms",
     "wave_-200ms",
     "wave_-167ms",
@@ -50,7 +56,7 @@
     "wave_+400ms",
     "wave_+433ms"
   ],
-  "template_block": null,
+  "template_block": 100,
   "params": {},
   "weight_power": 1.0,
   "train_records": [
@@ -81,19 +87,16 @@
   "cv": {
     "n_folds": 5,
     "grouping": "record",
-    "macro_f1": 0.4930682205084574,
-    "accuracy": 0.8969569738468481,
-    "N_Se": 0.9155246159217877,
-    "N_+P": 0.9798439835575485,
-    "N_F1": 0.9465929602888087,
-    "S_Se": 0.31919406150583246,
-    "S_+P": 0.4446085672082718,
-    "S_F1": 0.37160493827160496,
-    "V_Se": 0.9142027455121436,
-    "V_+P": 0.5091898250257315,
-    "V_F1": 0.6540749834734159,
-    "F_Se": 0.0,
-    "F_+P": 0.0,
-    "F_F1": 0.0
+    "macro_f1": 0.7247315049850739,
+    "accuracy": 0.9534170705172584,
+    "N_Se": 0.9654111382681564,
+    "N_+P": 0.9852125693160814,
+    "N_F1": 0.9752113483307064,
+    "S_Se": 0.3711558854718982,
+    "S_+P": 0.2669717772692601,
+    "S_F1": 0.3105590062111801,
+    "V_Se": 0.9532734952481521,
+    "V_+P": 0.8318359824925132,
+    "V_F1": 0.8884241604133349
   }
 }
