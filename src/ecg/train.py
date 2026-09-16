@@ -3,6 +3,7 @@
 DS2 no se usa en ningún lugar de este módulo: se evalúa una sola vez en la fase final.
 
 Uso:  python -m ecg.train baseline [--kind xgb|rf]
+      python -m ecg.train baseline-v2
       python -m ecg.train cnn [--skip-cv]
 """
 
@@ -32,6 +33,15 @@ BASELINE_CHOICE = {
     "feature_set": "rr+morph+wave",
     "weight_power": 1.0,
     "params": {},  # hiperparámetros por defecto de models/baseline.py
+}
+
+# Versión 2 del baseline (notebooks/05_model_v2.ipynb): RR normalizado por la mediana del
+# registro. Validada solo en DS1: DS2 ya se usó y no se vuelve a abrir.
+BASELINE_V2_CHOICE = {
+    "kind": "xgb",
+    "feature_set": "rr_norm+morph+wave",
+    "weight_power": 1.0,
+    "params": {},
 }
 
 # Configuración elegida en notebooks/03_cnn.ipynb (mayor F1 macro media en 2 semillas)
@@ -66,10 +76,18 @@ def cross_validate(
     return {"proba": proba, "pred": np.asarray(classes)[proba.argmax(axis=1)], "fold": fold}
 
 
-def train_baseline(kind: str, feature_set: str, params: dict, weight_power: float = 1.0) -> None:
+def train_baseline(
+    kind: str,
+    feature_set: str,
+    params: dict,
+    weight_power: float = 1.0,
+    model_name: str | None = None,
+) -> None:
     ds1 = load_split("ds1")
-    Z, names = build_features(ds1["X"], ds1["F"], feature_set)
     y, groups = ds1["y"], ds1["record"]
+    # `records` solo lo usan los conjuntos con RR normalizado por registro
+    Z, names = build_features(ds1["X"], ds1["F"], feature_set, records=groups)
+    model_name = model_name or f"baseline_{kind}"
 
     def make():
         return BaselineClassifier(
@@ -86,10 +104,10 @@ def train_baseline(kind: str, feature_set: str, params: dict, weight_power: floa
     model = make().fit(Z, y)  # modelo final: todo DS1
     config.MODELS_DIR.mkdir(exist_ok=True)
     config.REPORTS_DIR.mkdir(exist_ok=True)
-    path = config.MODELS_DIR / f"baseline_{kind}.joblib"
+    path = config.MODELS_DIR / f"{model_name}.joblib"
     model.save(path)
     meta = {
-        "model": f"baseline_{kind}",
+        "model": model_name,
         "feature_set": feature_set,
         "feature_names": names,
         "params": params,
@@ -98,7 +116,7 @@ def train_baseline(kind: str, feature_set: str, params: dict, weight_power: floa
         "seed": config.SEED,
         "cv": {"n_folds": N_FOLDS, "grouping": "record", **cv_summary},
     }
-    (config.REPORTS_DIR / f"baseline_{kind}_cv.json").write_text(json.dumps(meta, indent=2))
+    (config.REPORTS_DIR / f"{model_name}_cv.json").write_text(json.dumps(meta, indent=2))
     print(f"Modelo -> {path}")
 
 
@@ -176,13 +194,17 @@ def train_cnn(cfg: CNNConfig, skip_cv: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", choices=["baseline", "cnn"])
+    parser.add_argument("model", choices=["baseline", "baseline-v2", "cnn"])
     parser.add_argument("--kind", choices=["xgb", "rf"], default=BASELINE_CHOICE["kind"])
     parser.add_argument("--feature-set", default=BASELINE_CHOICE["feature_set"])
     parser.add_argument("--skip-cv", action="store_true", help="CNN: solo el modelo final")
     args = parser.parse_args()
     if args.model == "cnn":
         train_cnn(CNNConfig(**CNN_CHOICE), skip_cv=args.skip_cv)
+        return
+    if args.model == "baseline-v2":
+        c = BASELINE_V2_CHOICE
+        train_baseline(c["kind"], c["feature_set"], c["params"], c["weight_power"], "baseline_v2")
         return
     params = BASELINE_CHOICE["params"] if args.kind == BASELINE_CHOICE["kind"] else {}
     train_baseline(args.kind, args.feature_set, params, BASELINE_CHOICE["weight_power"])

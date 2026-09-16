@@ -17,6 +17,7 @@ python -m ecg.segment          # descarga MIT-BIH (~100 MB) y genera data/proces
 python -m ecg.train baseline   # validación cruzada por paciente en DS1 + modelo final
 python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
 python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
+python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente (validada en DS1)
 pytest -q
 ```
 
@@ -52,6 +53,36 @@ clase, no la exactitud. La CNN queda en F1 macro 0.49, con muchas más falsas al
   El EDA lo había anticipado y quedó registrado como riesgo antes de evaluar. La CNN, que usa solo
   **cocientes** de RR, detecta el 55.9 % de esos latidos.
 - **F es inservible** (+P 0.017): casi toda la clase F de entrenamiento está en un solo paciente.
+
+### Versión 2 del modelo: RR normalizado por paciente
+
+El fallo con la clase S en DS2 tiene una causa concreta y corregible, así que hay una
+**versión 2** ([`notebooks/05_model_v2.ipynb`](notebooks/05_model_v2.ipynb)): en vez de usar los
+intervalos RR en segundos, usa **RR dividido por la mediana del RR del propio registro**. Esa
+mediana se calcula con la señal de entrada, nunca con las etiquetas, así que la API puede hacer
+lo mismo con el ECG que recibe.
+
+Se eligió entre tres candidatos con una regla declarada antes de correr los experimentos: mayor
+F1 macro en validación por paciente y, si quedaban dentro de 0.01 (que fue el caso), desempate por
+Se de S.
+
+| | v1 (CV DS1) | v2 (CV DS1) |
+|---|---|---|
+| F1 macro | 0.493 | 0.487 |
+| **Se de S** | 0.319 | **0.370** |
+| +P de V | 0.509 | 0.480 |
+
+Prueba de estrés, multiplicando los intervalos RR para simular un paciente más lento:
+
+| Escala de RR | ×1 | ×1.5 | ×2 |
+|---|---|---|---|
+| Se de S, v1 | 0.319 | 0.247 | **0.133** |
+| Se de S, v2 | 0.370 | 0.370 | **0.370** |
+
+**Qué se puede afirmar:** v2 no depende de la frecuencia cardíaca basal y detecta más S en
+validación por paciente. **Qué no:** que sea mejor en DS2. Ese conjunto ya se usó una vez, y
+medir la v2 ahí sería elegir el modelo mirando el conjunto de prueba. **El resultado publicado
+sigue siendo el de v1**, y la mejora queda pendiente de validación externa (INCART).
 
 ## Estado
 

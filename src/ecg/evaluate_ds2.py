@@ -40,7 +40,7 @@ def predict_all(ds2: dict) -> dict[str, np.ndarray]:
     """Predicciones de los dos modelos entrenados solo con DS1."""
     out = {}
     baseline = BaselineClassifier.load(config.MODELS_DIR / "baseline_xgb.joblib")
-    Z, _ = build_features(ds2["X"], ds2["F"], baseline.feature_set)
+    Z, _ = build_features(ds2["X"], ds2["F"], baseline.feature_set, records=ds2["record"])
     out["baseline_xgb"] = baseline.predict(Z)
     cnn = CNNClassifier.load(config.MODELS_DIR / "cnn.pt", device="cpu")
     out["cnn"] = cnn.predict(ds2["X"], ds2["F"])

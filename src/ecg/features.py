@@ -68,6 +68,30 @@ def waveform_features(X: np.ndarray, bins: int = WAVE_BINS) -> tuple[np.ndarray,
     return wave.astype(np.float32), names
 
 
+def normalized_rr(F: np.ndarray, records: np.ndarray | None = None) -> tuple[np.ndarray, list[str]]:
+    """RR dividido por la mediana del RR del propio registro.
+
+    Hace la feature comparable entre pacientes con frecuencias cardíacas distintas: un RR de
+    0.73 s es normal en alguien a 80 lpm y claramente prematuro en un bradicárdico a 32 lpm
+    (registro 232 de DS2). La mediana se calcula con la señal de entrada, no con las etiquetas,
+    así que la API puede calcularla igual con el ECG que recibe.
+
+    `records`: identificador de registro por latido. Si es None, todos los latidos se toman como
+    una sola grabación (el caso de la API).
+    """
+    pre, post = F[:, 0], F[:, 1]
+    median = np.empty(len(F), dtype=np.float64)
+    if records is None:
+        median[:] = np.median(pre)
+    else:
+        for rec in np.unique(records):
+            m = records == rec
+            median[m] = np.median(pre[m])
+    median = np.maximum(median, 1e-3)
+    out = np.column_stack([pre / median, post / median]).astype(np.float32)
+    return out, ["pre_rr_over_median", "post_rr_over_median"]
+
+
 FEATURE_SETS = {
     "rr": ["rr"],
     "rr_ratios": ["rr_ratios"],
@@ -76,16 +100,27 @@ FEATURE_SETS = {
     "rr_ratios+morph": ["rr_ratios", "morph"],
     "rr+morph+wave": ["rr", "morph", "wave"],
     "rr_ratios+morph+wave": ["rr_ratios", "morph", "wave"],
+    # Versión 2: RR normalizado por la mediana del registro + cocientes
+    "rr_norm+morph+wave": ["rr_norm", "rr_ratios", "morph", "wave"],
 }
 
 
 def build_features(
-    X: np.ndarray, F: np.ndarray, feature_set: str = "rr+morph+wave"
+    X: np.ndarray,
+    F: np.ndarray,
+    feature_set: str = "rr+morph+wave",
+    records: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[str]]:
-    """Matriz de features para un conjunto con nombre (ver FEATURE_SETS)."""
+    """Matriz de features para un conjunto con nombre (ver FEATURE_SETS).
+
+    `records` solo se usa en los conjuntos con `rr_norm`, para normalizar por registro.
+    """
     blocks, names = [], []
     for part in FEATURE_SETS[feature_set]:
-        if part == "rr":
+        if part == "rr_norm":
+            n_block, n_names = normalized_rr(F, records)
+            blocks.append(n_block), names.extend(n_names)
+        elif part == "rr":
             blocks.append(F), names.extend(RR_FEATURE_NAMES)
         elif part == "rr_ratios":
             # sin RR absolutos: solo cocientes, que generalizan mejor entre pacientes
