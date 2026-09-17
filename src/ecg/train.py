@@ -235,7 +235,7 @@ def train_baseline(
     def make():
         return BaselineClassifier(
             kind=kind, params=params, feature_set=feature_set, weight_power=weight_power,
-            classes=list(classes),
+            classes=list(classes), template_block=template_block,
         )  # fmt: skip
 
     t0 = time.time()

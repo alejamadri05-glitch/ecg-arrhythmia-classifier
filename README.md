@@ -18,8 +18,11 @@ python -m ecg.train baseline   # validación cruzada por paciente en DS1 + model
 python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
 python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
 python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente
-python -m ecg.external           # descarga INCART (~820 MB) para la validación externa
-python -m ecg.evaluate_external  # compara v1, v2 y la CNN en INCART
+python -m ecg.external --db incart   # descarga INCART (~820 MB)
+python -m ecg.external --db svdb     # descarga SVDB (~54 MB)
+python -m ecg.evaluate_external                          # INCART: v1 vs v2 vs CNN
+python -m ecg.evaluate_external --db svdb --classes NSV \
+    --models v1_rr_absoluto,v2_rr_normalizado,v3_3clases,v4_morfologia_relativa
 python -m ecg.train baseline-v3  # versión 3: 3 clases (F fuera de alcance)
 python -m ecg.train baseline-v4  # versión 4: morfología relativa al paciente
 pytest -q
@@ -168,8 +171,37 @@ mayoría — en INCART hay 5 registros con más del 40 % de latidos anormales.
 latidos el resultado es el de v3), porque la morfología deriva durante la grabación. Con bloques
 locales de 20 latidos ya alcanza. La variante **causal**, apta para tiempo real, obtiene 0.715.
 
-⚠️ **v4 está validada solo en DS1.** DS2 ya se usó una vez e INCART se gastó comparando v1 con v2.
-Confirmar una mejora de este tamaño requiere una base nueva (SVDB es la candidata).
+**Confirmada en una base nueva:** ver la sección siguiente.
+
+### Confirmación externa de la v4 en SVDB
+
+Como la v4 se eligió en DS1, hacía falta confirmarla donde no se decidió nada. DS2 se gastó en la
+Fase 5 e INCART en la comparación v1 vs v2, así que la confirmación va sobre **SVDB**
+(MIT-BIH Supraventricular Arrhythmia Database): 78 pacientes, 184 324 latidos, **128 Hz** y canales
+**ECG1/ECG2 sin identificar** — el cambio de dominio más fuerte de los tres. Tiene 6.6 % de latidos
+S, contra 1.85 % en DS1: la prueba real para la clase floja
+([`notebooks/09_svdb_validation.ipynb`](notebooks/09_svdb_validation.ipynb)).
+
+| Modelo | F1 macro | F1 de S | F1 de V | +P de V | Errores |
+|---|---|---|---|---|---|
+| v1 (RR absoluto) | 0.596 | 0.340 | 0.518 | 0.365 | 25 652 |
+| v2 (RR normalizado) | 0.621 | 0.380 | 0.539 | 0.388 | 22 039 |
+| v3 (3 clases) | 0.612 | 0.367 | 0.526 | 0.376 | 22 702 |
+| **v4 (morfología relativa)** | **0.698** | **0.408** | **0.724** | **0.607** | **14 878 (−34 %)** |
+
+- **La mejora se confirma y además es consistente entre pacientes:** v4 gana en **47 de 78**, con
+  Wilcoxon pareado **p = 0.008** (la v2 en INCART no había llegado a significancia). Las ganancias
+  suman 8 626 errores contra 802 de pérdidas.
+- Los falsos V caen un 69 % (10 602 → 3 324) y **S también mejora**, medido sobre 12 194 latidos.
+
+**El límite del enfoque, ahora medido.** Las dos ideas que mejor funcionaron comparten un supuesto:
+que **lo dominante en el paciente es lo normal** (el RR local para el ritmo, la plantilla para la
+forma). En el registro 865 —134 lpm, con **el 58 % de sus latidos supraventriculares**— las dos se
+dan vuelta y la Se de S es **0.00**. Es una limitación de diseño, no un error: el sistema supone
+ritmo de base sinusal, y eso va al uso previsto y al análisis de riesgo.
+
+**Estado de las bases externas:** DS2, INCART y SVDB están las tres gastadas. Cualquier iteración
+futura se decide en DS1 y necesita otra base para confirmarse.
 
 ## Estado
 
@@ -186,6 +218,7 @@ Confirmar una mejora de este tamaño requiere una base nueva (SVDB es la candida
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
 | + | Versión 3: 3 clases y estudio de calibración | ✅ |
 | + | Versión 4: morfología relativa al paciente | ✅ |
+| + | Confirmación externa de la v4 en SVDB | ✅ |
 
 Latidos extraídos (difieren de los publicados por de Chazal et al. en ≤ 42 por clase: el primer
 y último latido de cada registro no tienen RR previo/siguiente):

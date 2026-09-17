@@ -1,9 +1,15 @@
 {
   "aviso": "Proyecto educativo. No es un dispositivo médico.",
   "dataset": {
-    "nombre": "INCART (St Petersburg, PhysioNet)",
-    "derivacion": "II",
+    "nombre": "incart",
+    "canal": "II",
     "remuestreo": "257 -> 360 Hz",
+    "clases_evaluadas": [
+      "N",
+      "S",
+      "V",
+      "F"
+    ],
     "registros": 75,
     "latidos": 175718,
     "por_clase": {
@@ -12,6 +18,7 @@
       "V": 20000,
       "F": 219
     },
+    "latidos_excluidos_por_clase_fuera_de_la_tarea": 0,
     "pacientes_fuera_del_rango_de_frecuencia_de_ds1": 14
   },
   "accuracy_prediciendo_siempre_N": 0.8738,
@@ -30,7 +37,10 @@
       "V_F1": 0.8883,
       "F_Se": 0.3744,
       "F_+P": 0.0642,
-      "F_F1": 0.1096
+      "F_F1": 0.1096,
+      "V_como_N": 1033,
+      "falsas_alarmas_sobre_N": 4224,
+      "errores": 7323
     },
     "v2_rr_normalizado": {
       "macro_f1": 0.6338,
@@ -46,7 +56,10 @@
       "V_F1": 0.8905,
       "F_Se": 0.3288,
       "F_+P": 0.0906,
-      "F_F1": 0.142
+      "F_F1": 0.142,
+      "V_como_N": 1006,
+      "falsas_alarmas_sobre_N": 3241,
+      "errores": 6387
     },
     "cnn": {
       "macro_f1": 0.4636,
@@ -62,7 +75,10 @@
       "V_F1": 0.7189,
       "F_Se": 0.4201,
       "F_+P": 0.0063,
-      "F_F1": 0.0123
+      "F_F1": 0.0123,
+      "V_como_N": 402,
+      "falsas_alarmas_sobre_N": 27062,
+      "errores": 31879
     }
   },
   "S_por_frecuencia": {

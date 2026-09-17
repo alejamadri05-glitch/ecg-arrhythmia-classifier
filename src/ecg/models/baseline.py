@@ -46,6 +46,9 @@ class BaselineClassifier:
     kind: str = "xgb"  # "rf" | "xgb"
     params: dict = field(default_factory=dict)
     feature_set: str = "rr+morph+wave"
+    # Tamaño del bloque para la plantilla del paciente (features "rel"/"wave_rel"); None = global.
+    # Va en el modelo para que quede autocontenido: quien lo carga sabe cómo construir sus features.
+    template_block: int | None = None
     # Exponente de los pesos "balanced": 1 = inverso a la frecuencia, 0.5 = raíz, 0 = sin pesos
     weight_power: float = 1.0
     seed: int = config.SEED
