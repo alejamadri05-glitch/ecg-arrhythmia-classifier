@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from sklearn.model_selection import GroupKFold
@@ -25,8 +26,10 @@ from ecg.calibrate import DEFAULT_GRID, apply_weights, tune_decision_weights
 from ecg.evaluate import per_class_metrics, summary
 from ecg.features import build_features
 from ecg.models.baseline import BaselineClassifier
-from ecg.models.cnn import MODEL_VERSION, CNNClassifier, CNNConfig
 from ecg.segment import load_split
+
+if TYPE_CHECKING:  # PyTorch es un extra opcional: entrenar el baseline no debe requerirlo
+    from ecg.models.cnn import CNNConfig
 
 N_FOLDS = 5
 
@@ -279,7 +282,7 @@ def train_baseline(
 
 
 def cross_validate_cnn(
-    cfg: CNNConfig,
+    cfg: "CNNConfig",
     X: np.ndarray,
     F: np.ndarray,
     y: np.ndarray,
@@ -291,6 +294,8 @@ def cross_validate_cnn(
     Dentro de cada fold, la CNN separa pacientes internos para el early stopping: el fold
     externo solo se usa para predecir.
     """
+    from ecg.models.cnn import CNNClassifier
+
     classes = list(config.CLASSES)
     proba = np.zeros((len(y), len(classes)), dtype=np.float32)
     fold = np.full(len(y), -1, dtype=np.int8)
@@ -313,9 +318,11 @@ def cross_validate_cnn(
     }
 
 
-def fit_final_cnn(cfg: CNNConfig, ds1: dict, cv_summary: dict | None = None) -> Path:
+def fit_final_cnn(cfg: "CNNConfig", ds1: dict, cv_summary: dict | None = None) -> Path:
     """Modelo final con el mismo protocolo que la validación: early stopping en pacientes
     internos de DS1. Lo que se valida es lo que se entrega."""
+    from ecg.models.cnn import MODEL_VERSION, CNNClassifier
+
     model = CNNClassifier(cfg).fit(ds1["X"], ds1["F"], ds1["y"], groups=ds1["record"])
     config.MODELS_DIR.mkdir(exist_ok=True)
     config.REPORTS_DIR.mkdir(exist_ok=True)
@@ -336,7 +343,7 @@ def fit_final_cnn(cfg: CNNConfig, ds1: dict, cv_summary: dict | None = None) -> 
     return path
 
 
-def train_cnn(cfg: CNNConfig, skip_cv: bool = False) -> None:
+def train_cnn(cfg: "CNNConfig", skip_cv: bool = False) -> None:
     ds1 = load_split("ds1")
     cv_summary = None
     if not skip_cv:
@@ -364,6 +371,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.model == "cnn":
+        from ecg.models.cnn import CNNConfig
+
         train_cnn(CNNConfig(**CNN_CHOICE), skip_cv=args.skip_cv)
         return
     if args.model == "baseline-v5":

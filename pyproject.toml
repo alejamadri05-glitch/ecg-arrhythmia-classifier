@@ -17,15 +17,17 @@ dependencies = [
     "pandas>=2.1",
     "scikit-learn>=1.4",
     "xgboost>=2.0",
-    "torch>=2.2",
     "neurokit2>=0.2.7",
     "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
+# La API no necesita PyTorch: sirve el baseline (XGBoost). Dejarlo fuera de las dependencias base
+# baja la imagen de Docker de ~700 MB a ~250 MB.
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 app = ["streamlit>=1.33"]
-dev = ["pytest>=8", "ruff>=0.4", "httpx>=0.27", "jupyter", "nbconvert", "ipykernel"]
+dl = ["torch>=2.2"]  # solo para la CNN (ecg.models.cnn, ecg.train, ecg.evaluate_external)
+dev = ["pytest>=8", "ruff>=0.4", "httpx>=0.27", "jupyter", "nbconvert", "ipykernel", "torch>=2.2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -16,12 +16,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Torch en su versión CPU: la imagen pasa de ~2.5 GB a ~700 MB. Si ese índice no tiene rueda
-# para la arquitectura (p. ej. arm64), se cae de vuelta a PyPI en lugar de fallar el build.
+# La API sirve el baseline (XGBoost) y no necesita PyTorch, que es un extra opcional del paquete.
+# Por eso la imagen queda en ~250 MB en vez de ~2.5 GB.
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch \
-    || pip install --no-cache-dir torch
 RUN pip install --no-cache-dir ".[api]"
 
 COPY api/ ./api/

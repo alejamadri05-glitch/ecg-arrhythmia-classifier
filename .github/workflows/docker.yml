@@ -1,0 +1,89 @@
+name: docker
+
+# Construye la imagen de la API y verifica que responda. Sirve como prueba pública de que el
+# Dockerfile funciona, sin depender de la máquina de nadie.
+on:
+  push:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - "api/**"
+      - "src/**"
+      - ".github/workflows/docker.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Cachear MIT-BIH
+        id: cache-mitdb
+        uses: actions/cache@v4
+        with:
+          path: data/mitdb
+          key: mitdb-v1
+
+      - name: Preparar datos y modelo
+        # models/ no está en el repositorio: la imagen necesita el modelo entrenado
+        run: |
+          pip install -e ".[api]"
+          python -m ecg.segment
+          python -m ecg.train baseline-v5
+
+      - name: Construir la imagen
+        run: docker build -t ecg-api .
+
+      - name: Tamaño de la imagen
+        run: docker images ecg-api --format '{{.Repository}}:{{.Tag}} {{.Size}}'
+
+      - name: Levantar el contenedor
+        run: |
+          docker run -d --name ecg-api -p 8000:8000 ecg-api
+          for i in $(seq 1 30); do
+            if curl -sf localhost:8000/health > /dev/null; then break; fi
+            sleep 2
+          done
+
+      - name: Verificar que responde
+        run: |
+          set -e
+          curl -sf localhost:8000/health | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -sf localhost:8000/model | tee /dev/stderr | grep -q 'baseline_v5'
+          # una predicción real sobre un registro de MIT-BIH
+          python - <<'PY'
+          import json, urllib.request
+          import numpy as np
+          from ecg.data import load_record
+          from ecg import config
+
+          rec = load_record(100)
+          n = 360 * 30
+          m = (rec.ann_samples < n) & np.isin(rec.ann_symbols, list(config.AAMI_MAP))
+          payload = {"fs": 360, "signal": rec.signal[:n].round(4).tolist(),
+                     "r_peaks": rec.ann_samples[m].tolist()}
+          req = urllib.request.Request("http://localhost:8000/predict",
+                                       data=json.dumps(payload).encode(),
+                                       headers={"content-type": "application/json"})
+          d = json.load(urllib.request.urlopen(req))
+          assert d["model_name"] == "baseline_v5", d["model_name"]
+          assert d["out_of_scope"] == ["F"], d["out_of_scope"]
+          assert d["n_beats"] > 20, d["n_beats"]
+          assert all(b["class"] in ("N", "S", "V") for b in d["beats"])
+          print(f"OK: {d['n_beats']} latidos clasificados, versión {d['model_version']}")
+          PY
+          # una entrada inválida tiene que ser rechazada (REQ-002)
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/predict \
+            -H 'content-type: application/json' -d '{"fs": 50, "signal": [0, 1, 2]}')
+          test "$codigo" = "422" || { echo "esperaba 422 y llegó $codigo"; exit 1; }
+          echo "La validación de frecuencia de muestreo rechaza como corresponde"
+
+      - name: Logs del contenedor si algo falló
+        if: failure()
+        run: docker logs ecg-api
