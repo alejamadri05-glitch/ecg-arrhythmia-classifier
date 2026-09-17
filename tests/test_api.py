@@ -127,3 +127,19 @@ def test_warns_when_there_are_few_beats():
     señal, picos = ecg_sintetico(segundos=12)
     d = client.post("/predict", json={"fs": 360.0, "signal": señal, "r_peaks": picos}).json()
     assert any("poco confiables" in w for w in d["warnings"])
+
+
+def test_input_validation_does_not_need_the_model():
+    """En CI no hay modelo entrenado: una entrada inválida debe fallar por su motivo real (422),
+    no por falta de modelo (503)."""
+    señal, _ = ecg_sintetico()
+    casos = [
+        ({"fs": 50.0, "signal": señal}, "Frecuencia de muestreo"),
+        ({"fs": 360.0, "signal": señal[:100]}, "demasiado corta"),
+        ({"fs": 360.0, "signal": señal, "r_peaks": [1000, 2000]}, "al menos"),
+        ({"fs": 360.0, "signal": señal, "r_peaks": [900, 500]}, "ordenados"),
+    ]
+    for payload, esperado in casos:
+        r = client.post("/predict", json=payload)
+        assert r.status_code == 422, (payload.get("r_peaks"), r.status_code, r.json())
+        assert esperado in r.json()["detail"]

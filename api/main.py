@@ -165,7 +165,6 @@ def model_info() -> dict:
 @app.post("/predict", response_model=PredictResponse)
 def predict(request: Annotated[PredictRequest, Body()]) -> PredictResponse:
     signal = validate_input(request)
-    model = get_model()
     warnings: list[str] = []
 
     escala = config.FS / request.fs
@@ -201,6 +200,8 @@ def predict(request: Annotated[PredictRequest, Body()]) -> PredictResponse:
             f"confiables con menos de {FEW_BEATS} latidos"
         )
 
+    # El modelo se carga recién acá: una petición inválida no debe depender de que exista.
+    model = get_model()
     Z, _ = build_features(X, F, model.feature_set, template_block=model.template_block)
     proba = model.predict_proba(Z)
     clases = np.asarray(model.classes)
