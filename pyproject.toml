@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # La API no necesita PyTorch: sirve el baseline (XGBoost). Dejarlo fuera de las dependencias base
-# baja la imagen de Docker de ~700 MB a ~250 MB.
+# evita que la imagen de Docker lo instale (varios GB con CUDA).
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 app = ["streamlit>=1.33"]
 dl = ["torch>=2.2"]  # solo para la CNN (ecg.models.cnn, ecg.train, ecg.evaluate_external)

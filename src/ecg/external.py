@@ -24,6 +24,7 @@ import numpy as np
 import wfdb
 
 from ecg import config
+from ecg.data import dl_database_with_retry
 from ecg.preprocess import bandpass, resample
 from ecg.segment import beat_windows
 
@@ -59,7 +60,7 @@ def download(db: ExternalDB = INCART) -> None:
     if (db.dir / db.sentinel).exists():
         return
     db.dir.mkdir(parents=True, exist_ok=True)
-    wfdb.dl_database(db.physionet, dl_dir=str(db.dir))
+    dl_database_with_retry(db.physionet, db.dir)
 
 
 def verify(db: ExternalDB = INCART) -> list[tuple[str, str]]:

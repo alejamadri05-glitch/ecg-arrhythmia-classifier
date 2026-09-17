@@ -17,10 +17,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # La API sirve el baseline (XGBoost) y no necesita PyTorch, que es un extra opcional del paquete.
-# Por eso la imagen queda en ~250 MB en vez de ~2.5 GB.
+# En Linux, XGBoost además arrastra NCCL (~290 MB), que solo sirve para entrenar con varias GPU;
+# se desinstala porque la inferencia corre en CPU. El nombre cambia con la versión de CUDA
+# (nvidia-nccl-cu12, -cu13), por eso se busca por prefijo.
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir ".[api]"
+RUN pip install --no-cache-dir ".[api]" \
+    && pip freeze | grep -i '^nvidia-nccl' | cut -d= -f1 | xargs -r pip uninstall -y
 
 COPY api/ ./api/
 COPY models/ ./models/

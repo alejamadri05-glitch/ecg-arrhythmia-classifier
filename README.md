@@ -13,7 +13,7 @@ Clasifica cada latido de un ECG en las 4 clases AAMI (**N, S, V, F**) con evalua
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate   # 3.11 o 3.12
 pip install -e ".[api,app,dev]"   # dev incluye PyTorch (solo lo necesita la CNN)
-python -m ecg.segment          # descarga MIT-BIH (~100 MB) y genera data/processed/ds{1,2}.npz
+python -m ecg.segment          # descarga MIT-BIH (zip oficial de 77 MB, verificado por SHA-256) y genera data/processed/ds{1,2}.npz
 python -m ecg.train baseline   # validación cruzada por paciente en DS1 + modelo final
 python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
 python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
@@ -333,7 +333,7 @@ streamlit run app/streamlit_app.py                         # demo interactiva
 ```
 
 Con Docker (el modelo se entrena antes, porque `models/` no está en el repositorio). La imagen
-pesa ~250 MB: la API sirve el baseline de XGBoost y **no necesita PyTorch**, que es un extra
+ocupa ~780 MB en disco: la API sirve el baseline de XGBoost y **no necesita PyTorch**, que es un extra
 opcional del paquete (`pip install -e ".[dl]"`) usado solo por la CNN:
 
 ```bash

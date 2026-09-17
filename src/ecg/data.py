@@ -1,5 +1,11 @@
 """Descarga y lectura de registros MIT-BIH."""
 
+import hashlib
+import shutil
+import time
+import urllib.request
+import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +13,11 @@ import numpy as np
 import wfdb
 
 from ecg import config
+
+MITDB_ZIP_URL = (
+    "https://physionet.org/static/published-projects/mitdb/mit-bih-arrhythmia-database-1.0.0.zip"
+)
+_MITDB_SUFFIXES = {".dat", ".hea", ".atr"}
 
 
 @dataclass
@@ -18,13 +29,110 @@ class Record:
     ann_symbols: np.ndarray  # símbolo de cada anotación
 
 
-def download(db_dir: Path = config.DB_DIR) -> None:
-    """Descarga MIT-BIH completo (~100 MB) si todavía no está."""
+def with_retry(
+    action: Callable[[], None],
+    what: str,
+    attempts: int = 5,
+    wait_s: float = 5.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Reintenta errores de red con espera exponencial. Los errores de programación no se
+    reintentan: solo OSError, del que heredan URLError, los timeouts y NetFileError de wfdb."""
+    for attempt in range(1, attempts + 1):
+        try:
+            action()
+            return
+        except OSError as exc:
+            if attempt == attempts:
+                raise
+            delay = wait_s * 2 ** (attempt - 1)
+            print(f"{what} falló ({exc}); intento {attempt + 1}/{attempts} en {delay:.0f} s")
+            sleep(delay)
+
+
+def dl_database_with_retry(
+    db: str, dl_dir: Path, attempts: int = 5, wait_s: float = 5.0, sleep=time.sleep
+) -> None:
+    """``wfdb.dl_database`` con reintentos. Como wfdb no vuelve a bajar los archivos que ya
+    están completos, cada intento sigue donde quedó el anterior."""
+    with_retry(
+        lambda: wfdb.dl_database(db, dl_dir=str(dl_dir)),
+        f"Descarga de {db}",
+        attempts=attempts,
+        wait_s=wait_s,
+        sleep=sleep,
+    )
+
+
+def download(db_dir: Path = config.DB_DIR, url: str = MITDB_ZIP_URL, sleep=time.sleep) -> None:
+    """Descarga MIT-BIH (zip oficial de 77 MB) si todavía no está.
+
+    No usa ``wfdb.dl_database``: esa función pide cientos de archivos seguidos y PhysioNet corta
+    la ráfaga con 502 Bad Gateway (pasó en CI y se reprodujo en un contenedor Linux, incluso con
+    reintentos), mientras que una petición suelta pasa sin problema. Cada archivo se verifica
+    contra el SHA256SUMS.txt que publica PhysioNet dentro del mismo zip.
+    """
     db_dir = Path(db_dir)
     if (db_dir / "234.atr").exists():
         return
     db_dir.mkdir(parents=True, exist_ok=True)
-    wfdb.dl_database("mitdb", dl_dir=str(db_dir))
+    zip_path = db_dir / "mitdb.zip.part"
+    try:
+        with_retry(lambda: _fetch(url, zip_path), "Descarga de MIT-BIH", sleep=sleep)
+        extract_verified(zip_path, db_dir)
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+
+def _fetch(url: str, dest: Path) -> None:
+    with urllib.request.urlopen(url, timeout=60) as resp, open(dest, "wb") as out:
+        shutil.copyfileobj(resp, out, length=1 << 20)
+
+
+def extract_verified(zip_path: Path, db_dir: Path) -> list[str]:
+    """Extrae los registros (.dat, .hea, .atr y RECORDS) verificando su SHA-256.
+
+    Todo se verifica antes de escribir: un zip corrupto no deja datos a medias que después
+    pasen por buenos (``download`` usa la existencia de 234.atr para no volver a bajar).
+    Solo se aceptan archivos del primer nivel de la carpeta raíz del zip, lo que descarta
+    subcarpetas (x_mitdb, mitdbdir) y cualquier ruta con "..".
+    """
+    with zipfile.ZipFile(zip_path) as zf:
+        members = {}
+        for name in zf.namelist():
+            parts = name.split("/")
+            if len(parts) == 2 and parts[1] and "\\" not in parts[1]:
+                members[parts[1]] = name
+        if "SHA256SUMS.txt" not in members:
+            raise ValueError("El zip no trae SHA256SUMS.txt: no se puede verificar la integridad")
+        expected = {}
+        for line in zf.read(members["SHA256SUMS.txt"]).decode().splitlines():
+            if line.strip():
+                digest, fname = line.split(maxsplit=1)
+                expected[fname] = digest
+
+        wanted = sorted(f for f in members if f == "RECORDS" or Path(f).suffix in _MITDB_SUFFIXES)
+        contents = {}
+        for fname in wanted:
+            content = zf.read(members[fname])
+            if hashlib.sha256(content).hexdigest() != expected.get(fname):
+                raise ValueError(f"{fname}: el SHA-256 no coincide con SHA256SUMS.txt")
+            contents[fname] = content
+
+    if "RECORDS" not in contents:
+        raise ValueError("El zip no trae RECORDS")
+    missing = [
+        f"{rec}{suffix}"
+        for rec in contents["RECORDS"].decode().split()
+        for suffix in sorted(_MITDB_SUFFIXES)
+        if f"{rec}{suffix}" not in contents
+    ]
+    if missing:
+        raise ValueError(f"Faltan archivos de registros en el zip: {missing[:5]}")
+
+    for fname, content in contents.items():
+        (db_dir / fname).write_bytes(content)
+    return wanted
 
 
 def lead_index(sig_names: list[str], lead: str = config.LEAD) -> int:

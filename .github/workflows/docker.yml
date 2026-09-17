@@ -23,19 +23,36 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Cachear MIT-BIH
+      - name: Instalar el paquete (sin PyTorch)
+        run: pip install -e ".[api]"
+
+      # Restaurar y guardar por separado: una descarga exitosa queda en caché aunque falle un
+      # paso posterior, y la próxima corrida no vuelve a pedirle cientos de archivos a PhysioNet.
+      - name: Restaurar MIT-BIH de la caché
         id: cache-mitdb
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: data/mitdb
           key: mitdb-v1
 
-      - name: Preparar datos y modelo
-        # models/ no está en el repositorio: la imagen necesita el modelo entrenado
-        run: |
-          pip install -e ".[api]"
-          python -m ecg.segment
-          python -m ecg.train baseline-v5
+      - name: Descargar MIT-BIH
+        if: steps.cache-mitdb.outputs.cache-hit != 'true'
+        # download() reintenta: PhysioNet devuelve errores 5xx transitorios
+        run: python -c "from ecg.data import download; download()"
+
+      - name: Guardar MIT-BIH en la caché
+        if: steps.cache-mitdb.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data/mitdb
+          key: mitdb-v1
+
+      # models/ no está en el repositorio: la imagen necesita el modelo entrenado
+      - name: Segmentar latidos
+        run: python -m ecg.segment
+
+      - name: Entrenar baseline v5
+        run: python -m ecg.train baseline-v5
 
       - name: Construir la imagen
         run: docker build -t ecg-api .
@@ -86,4 +103,5 @@ jobs:
 
       - name: Logs del contenedor si algo falló
         if: failure()
-        run: docker logs ecg-api
+        # si falló antes de levantar el contenedor, no hay logs que mostrar
+        run: docker logs ecg-api || echo "El contenedor no llegó a crearse"
