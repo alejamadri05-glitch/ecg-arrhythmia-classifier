@@ -249,7 +249,7 @@ para confirmar S (28 latidos S contra 35 671 N en 5 registros). Falta una base a
 | 3 | Baseline (Random Forest / XGBoost) — [`notebooks/02_baseline.ipynb`](notebooks/02_baseline.ipynb) | ✅ |
 | 4 | CNN 1D (PyTorch) — [`notebooks/03_cnn.ipynb`](notebooks/03_cnn.ipynb) | ✅ |
 | 5 | Evaluación final en DS2 — [`notebooks/04_ds2_evaluation.ipynb`](notebooks/04_ds2_evaluation.ipynb) | ✅ |
-| 6 | API FastAPI + Docker + demo Streamlit | ⏳ |
+| 6 | API FastAPI + Docker + demo Streamlit | ✅ |
 | 7 | Documentación estilo IEC 62304 / ISO 14971 | ⏳ |
 | 8 | README final y publicación | ⏳ |
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
@@ -323,6 +323,69 @@ inversión de polaridad.
 **Modelo primario para DS2:** baseline XGBoost, según la regla fijada de antemano
 ([`reports/model_selection.json`](reports/model_selection.json)). La CNN se reporta como
 comparación.
+
+## API y demo
+
+```bash
+python -m ecg.segment && python -m ecg.train baseline-v5   # datos y modelo (una vez)
+uvicorn api.main:app --reload                              # API en http://localhost:8000/docs
+streamlit run app/streamlit_app.py                         # demo interactiva
+```
+
+Con Docker (el modelo se entrena antes, porque `models/` no está en el repositorio):
+
+```bash
+docker build -t ecg-api . && docker run -p 8000:8000 ecg-api
+```
+
+### `POST /predict`
+
+```json
+{"fs": 360, "signal": [0.12, 0.15, "..."], "r_peaks": [370, 662, "..."]}
+```
+
+```json
+{
+  "model_version": "5.0.0",
+  "model_name": "baseline_v5",
+  "classes": ["N", "S", "V"],
+  "out_of_scope": ["F"],
+  "n_beats": 35,
+  "beats": [{"r_peak": 662, "time_s": 1.8389, "class": "N",
+             "probabilities": {"N": 1.0, "S": 0.0, "V": 0.0}}],
+  "warnings": ["2 latidos quedaron sin clasificar por estar en los bordes de la señal"],
+  "disclaimer": "Proyecto educativo y de investigación. No es un dispositivo médico; requiere revisión humana de un profesional."
+}
+```
+
+Si no se envían `r_peaks`, se detectan con `xqrs_detect`. Si `fs` no es 360 Hz, la señal se
+remuestrea y se avisa; las posiciones devueltas siempre están en el espacio de la señal enviada.
+
+### Las validaciones son controles de riesgo, no cortesía
+
+| Control | Qué hace |
+|---|---|
+| Frecuencia de muestreo fuera de 100–2000 Hz | Rechaza (REQ-002) |
+| Señal menor a 10 s, vacía o con valores no numéricos | Rechaza |
+| Picos R desordenados, repetidos o fuera de la señal | Rechaza |
+| Menos de 3 latidos | Rechaza: cada latido necesita vecinos para las features de ritmo |
+| Menos de 20 latidos | Avisa: la plantilla del paciente es poco confiable |
+| Calidad de señal baja | Avisa (REQ-005) |
+| **Ritmo irregular** (>15 % de los RR se apartan >30 % de la mediana) | Avisa |
+| **Frecuencia fuera de 54–109 lpm** (el rango de entrenamiento) | Avisa |
+
+Los dos últimos existen por una razón concreta: en el registro 232 el modelo clasifica **todos**
+los latidos como normales cuando el 73 % son supraventriculares. Un aviso basado en las
+predicciones no lo detectaría —el modelo "no ve" nada raro—, así que ambos se calculan **desde la
+señal**, con umbrales calibrados contra los casos de falla conocidos (registros 232 y 865) y
+registros de ritmo regular.
+
+### Demo
+
+Elegís un registro de DS2, un modelo (v1 a v5) y una ventana de tiempo, y muestra la **anotación
+del cardiólogo y la predicción lado a lado**, con métricas y matriz de confusión del registro
+completo. Sugerencias incluidas: el registro 232 para ver el fallo que no se resolvió, el 111 o el
+214 para el bloqueo de rama que arregló la v4, y el 105 para ruido.
 
 ## Licencia
 
