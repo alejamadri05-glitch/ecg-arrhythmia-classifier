@@ -6,6 +6,7 @@ Uso:  python -m ecg.train baseline [--kind xgb|rf]
       python -m ecg.train baseline-v2
       python -m ecg.train baseline-v3   # 3 clases
       python -m ecg.train baseline-v4   # 3 clases + morfología relativa al paciente
+      python -m ecg.train baseline-v5   # v4 + contexto de la secuencia de latidos
       python -m ecg.train cnn [--skip-cv]
 """
 
@@ -65,6 +66,16 @@ BASELINE_V3_CHOICE = {
 BASELINE_V4_CHOICE = {
     "kind": "xgb",
     "feature_set": "rr_norm+morph+rel+wave",
+    "weight_power": 1.0,
+    "params": {},
+    "template_block": 100,
+}
+
+# Versión 5 (notebooks/10_sequence_context.ipynb): v4 + contexto de la secuencia de latidos,
+# para los latidos S que vienen en racha. Validada solo en DS1.
+BASELINE_V5_CHOICE = {
+    "kind": "xgb",
+    "feature_set": "rr_norm+morph+rel+wave+ctx",
     "weight_power": 1.0,
     "params": {},
     "template_block": 100,
@@ -342,7 +353,8 @@ def train_cnn(cfg: CNNConfig, skip_cv: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "model", choices=["baseline", "baseline-v2", "baseline-v3", "baseline-v4", "cnn"]
+        "model",
+        choices=["baseline", "baseline-v2", "baseline-v3", "baseline-v4", "baseline-v5", "cnn"],
     )
     parser.add_argument("--kind", choices=["xgb", "rf"], default=BASELINE_CHOICE["kind"])
     parser.add_argument("--feature-set", default=BASELINE_CHOICE["feature_set"])
@@ -353,6 +365,11 @@ def main() -> None:
     args = parser.parse_args()
     if args.model == "cnn":
         train_cnn(CNNConfig(**CNN_CHOICE), skip_cv=args.skip_cv)
+        return
+    if args.model == "baseline-v5":
+        c = BASELINE_V5_CHOICE
+        train_baseline(c["kind"], c["feature_set"], c["params"], c["weight_power"],
+                       "baseline_v5", CLASSES_V3, c["template_block"])  # fmt: skip
         return
     if args.model == "baseline-v4":
         c = BASELINE_V4_CHOICE

@@ -25,6 +25,7 @@ python -m ecg.evaluate_external --db svdb --classes NSV \
     --models v1_rr_absoluto,v2_rr_normalizado,v3_3clases,v4_morfologia_relativa
 python -m ecg.train baseline-v3  # versión 3: 3 clases (F fuera de alcance)
 python -m ecg.train baseline-v4  # versión 4: morfología relativa al paciente
+python -m ecg.train baseline-v5  # versión 5: + contexto de la secuencia de latidos
 pytest -q
 ```
 
@@ -203,6 +204,42 @@ ritmo de base sinusal, y eso va al uso previsto y al análisis de riesgo.
 **Estado de las bases externas:** DS2, INCART y SVDB están las tres gastadas. Cualquier iteración
 futura se decide en DS1 y necesita otra base para confirmarse.
 
+### Versión 5: contexto de la secuencia, para los latidos S en racha
+
+Con la v4 confirmada, el 57 % de los errores que quedaban eran latidos S no detectados, y el
+análisis los separó en dos casos muy distintos
+([`notebooks/10_sequence_context.ipynb`](notebooks/10_sequence_context.ipynb)):
+
+| En SVDB | Latidos | Se (v4) | RR previo / RR local |
+|---|---|---|---|
+| S aislados | 8 795 | 0.365 | 0.78 (se ven prematuros) |
+| S en racha | 3 399 | **0.148** | **0.99** (no se ven prematuros) |
+
+Dentro de una racha supraventricular el "RR local" ya está formado por latidos rápidos, así que el
+latido prematuro deja de parecerlo: **la referencia está contaminada por lo que quiere detectar.**
+La v5 agrega una **referencia de dos escalas** (mediana móvil de 20 latidos y otra de 200), un
+**detector de racha** y el **parecido con los latidos vecinos**.
+
+| | v4 | **v5** |
+|---|---|---|
+| F1 macro (3 clases) | 0.725 | **0.743** |
+| Se de S | 0.371 | **0.439** |
+| Se de S aislados | 0.487 | **0.568** |
+| Se de S en racha | 0.279 | **0.337** |
+| V no detectados (RISK-01) | 166 | **139** |
+| Errores | 2 355 | **2 265** |
+
+Mejora S **y** baja el error más grave. Una variante de solo 21 features detectaba aún más S
+(Se 0.480), pero **quedó descartada por un guardarraíl declarado de antemano**: triplicaba los
+latidos ventriculares no detectados (166 → 430).
+
+**Es el mismo patrón por tercera vez:** v2 normalizó el ritmo por paciente, v4 la morfología y v5
+la referencia temporal. Las tres mejoran por elegir mejor **contra qué se compara**, no por cambiar
+de modelo.
+
+⚠️ **v5 está validada solo en DS1.** DS2, INCART y SVDB ya se gastaron, y European ST-T no sirve
+para confirmar S (28 latidos S contra 35 671 N en 5 registros). Falta una base adecuada.
+
 ## Estado
 
 | Fase | Contenido | Estado |
@@ -219,6 +256,7 @@ futura se decide en DS1 y necesita otra base para confirmarse.
 | + | Versión 3: 3 clases y estudio de calibración | ✅ |
 | + | Versión 4: morfología relativa al paciente | ✅ |
 | + | Confirmación externa de la v4 en SVDB | ✅ |
+| + | Versión 5: contexto de secuencia (S en racha) | ✅ |
 
 Latidos extraídos (difieren de los publicados por de Chazal et al. en ≤ 42 por clase: el primer
 y último latido de cada registro no tienen RR previo/siguiente):

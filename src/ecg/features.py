@@ -183,6 +183,99 @@ def residual_waveform_features(
     return wave, [n.replace("wave_", "residuo_") for n in names]
 
 
+CONTEXT_WINDOW = 20  # latidos previos para la referencia local
+LONG_WINDOW = 200  # referencia larga: no se deja arrastrar por una racha
+DROP_RATIO = 0.85  # un RR por debajo de este cociente cuenta como acortamiento
+MAX_SINCE_DROP = 20  # tope para "latidos desde el último acortamiento"
+
+
+def sequence_features(
+    X: np.ndarray,
+    F: np.ndarray,
+    records: np.ndarray | None = None,
+    window: int = CONTEXT_WINDOW,
+    long_window: int = LONG_WINDOW,
+) -> tuple[np.ndarray, list[str]]:
+    """Contexto de la secuencia de latidos, para los latidos S que vienen en racha.
+
+    El cociente RR previo / RR local promedio falla dentro de una racha supraventricular: el
+    promedio local ya está formado por latidos rápidos, así que el latido prematuro deja de
+    parecerlo (en SVDB, los S en racha tienen cociente 0.99 contra 0.78 de los aislados).
+
+    La clave es usar **dos escalas**: una referencia local (que se adapta) y otra larga (que no).
+    Contra la larga, una racha entera sigue viéndose rápida, y además se puede detectar que
+    estamos *dentro* de una racha y cuántos latidos pasaron desde que arrancó.
+    """
+    import pandas as pd
+
+    pre_rr = F[:, 0].astype(np.float64)
+    n = len(pre_rr)
+    grupos = (
+        [np.arange(n)]
+        if records is None
+        else [np.flatnonzero(records == rec) for rec in np.unique(records)]
+    )
+
+    salidas = {k: np.ones(n) for k in ("ratio_local", "ratio_largo", "min_rr_reciente")}
+    salidas["cv_rr_local"] = np.zeros(n)
+    salidas["frac_cortos"] = np.zeros(n)
+    salidas["desde_caida"] = np.full(n, MAX_SINCE_DROP, dtype=np.float64)
+    salidas["rr_m2"] = np.ones(n)
+    salidas["rr_p2"] = np.ones(n)
+
+    for idx in grupos:
+        rr = pd.Series(pre_rr[idx])
+        local = np.maximum(rr.rolling(window, min_periods=3).median().bfill().to_numpy(), 1e-3)
+        larga = np.maximum(
+            rr.rolling(long_window, min_periods=10).median().bfill().to_numpy(), 1e-3
+        )
+        salidas["ratio_local"][idx] = pre_rr[idx] / local
+        salidas["ratio_largo"][idx] = pre_rr[idx] / larga
+        salidas["cv_rr_local"][idx] = (
+            rr.rolling(window, min_periods=3).std().bfill().fillna(0).to_numpy() / local
+        )
+        salidas["min_rr_reciente"][idx] = rr.rolling(window, min_periods=1).min().to_numpy() / larga
+        # ¿estamos dentro de una racha? fracción de latidos recientes acortados contra la larga
+        cortos = pd.Series((pre_rr[idx] < DROP_RATIO * larga).astype(float))
+        salidas["frac_cortos"][idx] = cortos.rolling(window, min_periods=1).mean().to_numpy()
+        # latidos desde el arranque de la racha (el primer acortamiento tras ritmo normal)
+        contador, desde = MAX_SINCE_DROP, np.empty(len(idx))
+        anterior = False
+        for i, hubo in enumerate(cortos.to_numpy() > 0):
+            if hubo and not anterior:  # arranque
+                contador = 0
+            else:
+                contador = min(contador + 1, MAX_SINCE_DROP)
+            desde[i], anterior = contador, hubo
+        salidas["desde_caida"][idx] = desde
+        mediana = max(float(np.median(pre_rr[idx])), 1e-3)
+        salidas["rr_m2"][idx] = np.roll(pre_rr[idx], 2) / mediana
+        salidas["rr_m2"][idx[:2]] = 1.0
+        salidas["rr_p2"][idx] = np.roll(pre_rr[idx], -2) / mediana
+        salidas["rr_p2"][idx[-2:]] = 1.0
+
+    corr_prev, corr_next = np.zeros(n), np.zeros(n)
+    for idx in grupos:
+        seg = X[idx]
+        corr_prev[idx[1:]] = _row_correlation(seg[1:], seg[:-1])
+        corr_next[idx[:-1]] = _row_correlation(seg[:-1], seg[1:])
+        corr_prev[idx[0]] = corr_next[idx[-1]] = 1.0
+
+    feats = {
+        "rr_sobre_mediana_movil": salidas["ratio_local"],
+        "rr_sobre_referencia_larga": salidas["ratio_largo"],
+        "cv_rr_local": salidas["cv_rr_local"],
+        "min_rr_reciente": salidas["min_rr_reciente"],
+        "frac_rr_cortos_recientes": salidas["frac_cortos"],
+        "latidos_desde_arranque_racha": salidas["desde_caida"],
+        "rr_dos_atras": salidas["rr_m2"],
+        "rr_dos_adelante": salidas["rr_p2"],
+        "corr_latido_previo": corr_prev,
+        "corr_latido_siguiente": corr_next,
+    }
+    return np.column_stack(list(feats.values())).astype(np.float32), list(feats)
+
+
 FEATURE_SETS = {
     "rr": ["rr"],
     "rr_ratios": ["rr_ratios"],
@@ -197,6 +290,10 @@ FEATURE_SETS = {
     "rr_norm+morph+rel+wave": ["rr_norm", "rr_ratios", "morph", "rel", "wave"],
     "rr_norm+rel": ["rr_norm", "rr_ratios", "rel"],
     "rr_norm+morph+rel+wave_rel": ["rr_norm", "rr_ratios", "morph", "rel", "wave_rel"],
+    # Idea 1 para la clase S: contexto de la secuencia de latidos
+    "rr_norm+morph+rel+wave+ctx": ["rr_norm", "rr_ratios", "morph", "rel", "wave", "ctx"],
+    "rr_norm+morph+wave+ctx": ["rr_norm", "rr_ratios", "morph", "wave", "ctx"],
+    "rr_norm+rel+ctx": ["rr_norm", "rr_ratios", "rel", "ctx"],
 }
 
 
@@ -229,6 +326,9 @@ def build_features(
         elif part == "morph":
             m, n = morphology_features(X)
             blocks.append(m), names.extend(n)
+        elif part == "ctx":
+            c, n = sequence_features(X, F, records)
+            blocks.append(c), names.extend(n)
         elif part == "rel":
             r, n = relative_morphology_features(
                 X, records, template_beats, template, template_block

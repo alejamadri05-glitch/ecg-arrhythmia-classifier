@@ -9,6 +9,7 @@ from ecg.features import (
     normalized_rr,
     patient_template,
     relative_morphology_features,
+    sequence_features,
     waveform_features,
 )
 from ecg.preprocess import zscore
@@ -125,3 +126,54 @@ def test_relative_features_detect_a_wider_beat():
     feats, names = relative_morphology_features(X, np.zeros(21, dtype=int))
     ancho = feats[:, names.index("qrs_ancho_sobre_plantilla")]
     assert ancho[:20].max() < 1.2 and ancho[20] > 1.5
+
+
+def synthetic_rr(pattern: list[float]) -> np.ndarray:
+    """Matriz F (pre_rr, post_rr, cocientes) a partir de una secuencia de intervalos RR."""
+    rr = np.array(pattern, dtype=np.float32)
+    post = np.append(rr[1:], rr[-1])
+    return np.column_stack([rr, post, np.ones_like(rr), np.ones_like(rr)]).astype(np.float32)
+
+
+def test_sequence_features_flag_an_isolated_premature_beat():
+    F = synthetic_rr([0.8] * 30 + [0.5] + [1.1] + [0.8] * 10)
+    X = np.tile(synthetic_beat(70), (len(F), 1)).astype(np.float32)
+    ctx, names = sequence_features(X, F, np.zeros(len(F), dtype=int))
+    corto = ctx[:, names.index("rr_sobre_referencia_larga")]
+    assert corto[30] < 0.7 and abs(corto[10] - 1.0) < 0.05
+    assert ctx[30, names.index("latidos_desde_arranque_racha")] == 0
+
+
+def test_long_reference_still_sees_a_run_as_fast():
+    """Dentro de una racha, la referencia local se adapta pero la larga no."""
+    F = synthetic_rr([0.8] * 200 + [0.45] * 40 + [0.8] * 20)  # racha larga: la local se adapta
+    X = np.tile(synthetic_beat(70), (len(F), 1)).astype(np.float32)
+    ctx, names = sequence_features(X, F, np.zeros(len(F), dtype=int))
+    dentro = 230  # 30 latidos dentro de la racha
+    local = ctx[dentro, names.index("rr_sobre_mediana_movil")]
+    larga = ctx[dentro, names.index("rr_sobre_referencia_larga")]
+    assert larga < 0.7 < local  # la larga la ve rápida; la local ya se adaptó
+    assert ctx[dentro, names.index("frac_rr_cortos_recientes")] > 0.5
+    desde = ctx[:, names.index("latidos_desde_arranque_racha")]
+    assert desde[200] == 0 and desde[210] == 10  # cuenta desde el arranque de la racha
+    assert desde[199] == 20  # en ritmo normal se queda en el tope
+
+
+def test_sequence_features_do_not_cross_records():
+    F = synthetic_rr([0.8] * 20 + [0.4] * 20)
+    X = np.tile(synthetic_beat(70), (len(F), 1)).astype(np.float32)
+    records = np.array([1] * 20 + [2] * 20)
+    ctx, names = sequence_features(X, F, records)
+    # el primer latido del registro 2 no puede "ver" el ritmo del registro 1
+    largo = ctx[:, names.index("rr_sobre_referencia_larga")]
+    assert abs(largo[20] - 1.0) < 0.2
+    assert ctx[20, names.index("corr_latido_previo")] == 1.0  # sin vecino previo en su registro
+
+
+def test_neighbour_correlation_detects_an_odd_beat():
+    X = np.tile(synthetic_beat(70), (10, 1)).astype(np.float32)
+    X[5] = synthetic_beat(160)  # un latido ancho entre latidos normales
+    F = synthetic_rr([0.8] * 10)
+    ctx, names = sequence_features(X, F, np.zeros(10, dtype=int))
+    prev = ctx[:, names.index("corr_latido_previo")]
+    assert prev[5] < 0.9 and prev[4] > 0.99
