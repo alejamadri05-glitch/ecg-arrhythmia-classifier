@@ -1,42 +1,65 @@
 # Clasificador de arritmias ECG (MIT-BIH)
 
-Clasifica cada latido de un ECG en clases AAMI con evaluación **inter-paciente** (split de de
-Chazal DS1/DS2). El modelo que se sirve distingue **N, S y V**; la clase F (fusión) se declaró
-fuera de alcance en la v3 y el porqué está en el [model card](docs/model_card.md).
+Clasifica cada latido de un ECG como normal (**N**), supraventricular (**S**) o ventricular
+(**V**), con **evaluación inter-paciente**: se entrena con unos pacientes y se mide en otros, que
+es la única forma de saber si sirve con alguien nuevo.
+
+[![ci](https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/actions/workflows/ci.yml/badge.svg)](https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/actions/workflows/ci.yml)
+[![docker](https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/actions/workflows/docker.yml/badge.svg)](https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/actions/workflows/docker.yml)
+[![licencia](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
 
 > **Aviso:** proyecto educativo y de investigación. No es un dispositivo médico ni debe usarse
 > para decisiones clínicas.
 
-Fases 1 a 7 completas: modelo, API en Docker, demo y
-[documentación estilo IEC 62304 / ISO 14971](#documentación-estilo-dispositivo-médico).
+![Anotación del cardiólogo contra predicción del modelo](reports/figures/readme_demo.png)
 
-## Inicio rápido
+*Diez segundos del registro 214, un paciente que el modelo nunca vio. Arriba la anotación del
+cardiólogo, abajo la predicción. Reproducible con
+`python scripts/readme_figure.py --registro 214 --inicio 1265`; las métricas completas, abajo.*
 
-```bash
-python3.11 -m venv .venv && source .venv/bin/activate   # 3.11 o 3.12
-pip install -e ".[api,app,dev]"   # dev incluye PyTorch (solo lo necesita la CNN)
-python -m ecg.segment          # descarga MIT-BIH (zip oficial de 77 MB, verificado por SHA-256) y genera data/processed/ds{1,2}.npz
-python -m ecg.train baseline   # validación cruzada por paciente en DS1 + modelo final
-python -m ecg.train cnn        # ídem para la CNN (usa GPU de Apple/CUDA si hay; ~5 min en M2)
-python -m ecg.evaluate_ds2     # evaluación final en DS2 (reportes y figuras)
-python -m ecg.train baseline-v2  # versión 2: RR normalizado por paciente
-python -m ecg.external --db incart   # descarga INCART (~820 MB)
-python -m ecg.external --db svdb     # descarga SVDB (~54 MB)
-python -m ecg.evaluate_external                          # INCART: v1 vs v2 vs CNN
-python -m ecg.evaluate_external --db svdb --classes NSV \
-    --models v1_rr_absoluto,v2_rr_normalizado,v3_3clases,v4_morfologia_relativa
-python -m ecg.train baseline-v3  # versión 3: 3 clases (F fuera de alcance)
-python -m ecg.train baseline-v4  # versión 4: morfología relativa al paciente
-python -m ecg.train baseline-v5  # versión 5: + contexto de la secuencia de latidos
-pytest -q
-```
+## En dos minutos
 
-**macOS:** XGBoost necesita OpenMP: `brew install libomp`.
+| | |
+|---|---|
+| **Qué es** | Clasificador de latidos entrenado con MIT-BIH, servido como API en Docker |
+| **Modelo** | XGBoost con 58 características de ritmo, morfología y contexto de secuencia |
+| **Evaluación** | Inter-paciente (split de de Chazal DS1/DS2) y validación externa en dos bases más |
+| **Resultados** | DS2, evaluación única (v1): F1 macro 0.512 · **Se de V 0.964**. Validación cruzada en DS1 (v5, la que se sirve): 0.743 |
+| **Lo que lo diferencia** | La evaluación honesta, el despliegue real y la [documentación estilo dispositivo médico](#documentación-estilo-dispositivo-médico) que se verifica sola |
 
-## Resultado final (DS2, 22 pacientes nunca vistos)
+## Resultados
 
-Modelo primario: **XGBoost** con features de RR + morfología, elegido por validación cruzada por
-paciente dentro de DS1 **antes** de mirar DS2, que se evaluó una sola vez.
+El proyecto tuvo cinco versiones del modelo, y **cada conjunto de datos se usó una sola vez**. Por
+eso los números de abajo corresponden a versiones distintas: reutilizar un conjunto para medir una
+versión posterior sería elegir el modelo mirando la prueba.
+
+| Conjunto de datos | Versión evaluada | F1 macro | Para qué se usó |
+|---|---|---|---|
+| **DS1**, validación cruzada por paciente | **v5 (la que se sirve)** | **0.743** | Elegir y ajustar |
+| DS2, 22 pacientes nunca vistos | v1 | 0.512 | Evaluación única y final |
+| INCART, 75 pacientes, derivación II | v2 | 0.634 | Comparar v1 contra v2 |
+| SVDB, 78 pacientes, derivación sin identificar | v4 | 0.698 | Confirmar la v4 |
+
+**La limitación más incómoda, por delante:** la v5 que se sirve solo tiene validación cruzada en
+DS1. Las tres bases independientes ya se gastaron, así que confirmarla exige una base nueva.
+
+### El modelo que se sirve: v5, validación cruzada por paciente en DS1
+
+| Clase | Se | +P | F1 |
+|---|---|---|---|
+| N (normal) | 0.965 | 0.987 | 0.976 |
+| S (supraventricular) | 0.439 | 0.315 | 0.367 |
+| V (ventricular) | **0.959** | 0.821 | 0.885 |
+| **F1 macro** | | | **0.743** |
+
+Tres clases: la F quedó fuera de alcance en la v3. Latidos V leídos como normales, que es el error
+más grave del análisis de riesgo: 139 sobre 3 788.
+
+### Evaluación única en DS2 (22 pacientes nunca vistos) — modelo v1
+
+Este es el resultado **formalmente limpio** del proyecto: el modelo se eligió por validación
+cruzada dentro de DS1 **antes** de mirar DS2, y DS2 se evaluó una sola vez. Es de la v1, la versión
+que existía en ese momento, y no se vuelve a abrir.
 
 | Clase | Se | +P | F1 |
 |---|---|---|---|
@@ -63,6 +86,168 @@ clase, no la exactitud. La CNN queda en F1 macro 0.49, con muchas más falsas al
   El EDA lo había anticipado y quedó registrado como riesgo antes de evaluar. La CNN, que usa solo
   **cocientes** de RR, detecta el 55.9 % de esos latidos.
 - **F es inservible** (+P 0.017): casi toda la clase F de entrenamiento está en un solo paciente.
+
+## Por qué la separación inter-paciente cambia todo
+
+El error más común en este problema es juntar todos los latidos y repartirlos al azar entre
+entrenamiento y prueba. Como latidos del mismo paciente caen de los dos lados, el modelo aprende
+a reconocer **a esa persona**, no la arritmia, y reporta más del 99 % de exactitud. Ese número es
+falso: con un paciente nuevo se derrumba.
+
+Acá la separación es por paciente en todos lados:
+
+- **Entrenamiento y prueba:** el split de de Chazal et al. (2004). DS2 se evaluó **una sola vez**,
+  al final, con la regla de selección fijada de antemano en
+  [`reports/model_selection.json`](reports/model_selection.json).
+- **Validación cruzada:** `GroupKFold` por registro, con el reparto congelado en
+  `config.DS1_FOLD_MAP` para que todos los experimentos sean comparables.
+- **Validación externa:** dos bases de datos independientes, INCART y SVDB, con otras derivaciones
+  y otros equipos.
+
+Hay una prueba automática que falla si un registro aparece en las dos particiones, y otra que
+verifica que se excluyan los pacientes con marcapasos, como recomienda AAMI EC57.
+
+La consecuencia de hacerlo bien es que los números son modestos: **F1 macro 0.512 en DS2**, no
+0.99. A cambio, son ciertos. Y la validación no resultó optimista: 0.493 en validación cruzada
+contra 0.512 en el conjunto de prueba.
+
+## Cómo correrlo en 5 minutos
+
+**Con Docker.** La imagen ocupa ~780 MB: sirve el modelo de XGBoost y **no incluye PyTorch**.
+
+```bash
+python -m ecg.segment && python -m ecg.train baseline-v5   # datos y modelo (models/ no va al repo)
+docker build -t ecg-api . && docker run -p 8000:8000 ecg-api
+```
+
+Después, la documentación interactiva queda en <http://localhost:8000/docs>.
+
+**Sin Docker**, con el entorno local:
+
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate   # 3.11 o 3.12
+pip install -e ".[api,app,dev]"   # dev incluye PyTorch (solo lo necesita la CNN)
+python -m ecg.segment             # descarga MIT-BIH (zip oficial de 77 MB, verificado por SHA-256)
+python -m ecg.train baseline-v5   # validación cruzada por paciente + modelo final
+uvicorn api.main:app --reload     # API en http://localhost:8000/docs
+streamlit run app/streamlit_app.py  # demo interactiva
+```
+
+**macOS:** XGBoost necesita OpenMP (`brew install libomp`).
+
+<details>
+<summary>Reproducir todo el recorrido: de la v1 a la v5 y las validaciones externas</summary>
+
+```bash
+python -m ecg.train baseline     # v1: el baseline original de 4 clases
+python -m ecg.train cnn          # CNN 1D (usa GPU de Apple/CUDA si hay; ~5 min en M2)
+python -m ecg.evaluate_ds2       # evaluación única en DS2 (reportes y figuras)
+python -m ecg.train baseline-v2  # RR normalizado por paciente
+python -m ecg.train baseline-v3  # 3 clases (F fuera de alcance)
+python -m ecg.train baseline-v4  # morfología relativa al paciente
+python -m ecg.train baseline-v5  # + contexto de la secuencia de latidos
+python -m ecg.external --db incart   # descarga INCART (~820 MB)
+python -m ecg.external --db svdb     # descarga SVDB (~54 MB)
+python -m ecg.evaluate_external                          # INCART: v1 vs v2 vs CNN
+python -m ecg.evaluate_external --db svdb --classes NSV \
+    --models v1_rr_absoluto,v2_rr_normalizado,v3_3clases,v4_morfologia_relativa
+pytest -q
+```
+
+</details>
+
+## Documentación estilo dispositivo médico
+
+Inspirada en **IEC 62304** (ciclo de vida del software médico) e **ISO 14971** (gestión de riesgo),
+con fines de aprendizaje. No es una declaración de cumplimiento.
+
+| Documento | Contenido |
+|---|---|
+| [Uso previsto](docs/intended_use.md) | Qué hace, para quién, y sobre todo **qué queda fuera de alcance** |
+| [Requisitos](docs/requirements.md) | 15 requisitos con identificador, cada uno con su verificación |
+| [Análisis de riesgo](docs/risk_analysis.md) | 10 riesgos con severidad, controles y riesgo residual |
+| [Trazabilidad](docs/traceability.md) | Requisito → código → prueba → riesgo |
+| [SOUP](docs/soup.md) | Inventario de software de terceros y qué pasa si cada uno falla |
+| [Model card](docs/model_card.md) | Datos, métricas, y las limitaciones del modelo que se sirve |
+
+Dos detalles que hacen que esto no sea papel mojado:
+
+- **La matriz de trazabilidad se verifica sola.** `tests/test_requirements.py` comprueba que cada
+  requisito esté trazado y que cada función y prueba citadas existan; si alguien renombra una
+  prueba y no actualiza la matriz, el CI falla.
+- **El umbral de sensibilidad de V (REQ-003) es una prueba automática**, no una promesa: se
+  contrasta contra el reporte de validación en cada corrida.
+
+El análisis de riesgo no es decorativo: **dos veces se rechazó una variante del modelo que ganaba
+en la métrica** porque aumentaba los latidos V no detectados (RISK-01), con el criterio declarado
+antes de correr cada experimento.
+
+## API y demo
+
+```bash
+python -m ecg.segment && python -m ecg.train baseline-v5   # datos y modelo (una vez)
+uvicorn api.main:app --reload                              # API en http://localhost:8000/docs
+streamlit run app/streamlit_app.py                         # demo interactiva
+```
+
+Con Docker (el modelo se entrena antes, porque `models/` no está en el repositorio). La imagen
+ocupa ~780 MB en disco: la API sirve el baseline de XGBoost y **no necesita PyTorch**, que es un extra
+opcional del paquete (`pip install -e ".[dl]"`) usado solo por la CNN:
+
+```bash
+docker build -t ecg-api . && docker run -p 8000:8000 ecg-api
+```
+
+### `POST /predict`
+
+```json
+{"fs": 360, "signal": [0.12, 0.15, "..."], "r_peaks": [370, 662, "..."]}
+```
+
+```json
+{
+  "model_version": "5.0.0",
+  "model_name": "baseline_v5",
+  "classes": ["N", "S", "V"],
+  "out_of_scope": ["F"],
+  "n_beats": 35,
+  "beats": [{"r_peak": 662, "time_s": 1.8389, "class": "N",
+             "probabilities": {"N": 1.0, "S": 0.0, "V": 0.0}}],
+  "warnings": ["2 latidos quedaron sin clasificar por estar en los bordes de la señal"],
+  "disclaimer": "Proyecto educativo y de investigación. No es un dispositivo médico; requiere revisión humana de un profesional."
+}
+```
+
+Si no se envían `r_peaks`, se detectan con `xqrs_detect`. Si `fs` no es 360 Hz, la señal se
+remuestrea y se avisa; las posiciones devueltas siempre están en el espacio de la señal enviada.
+
+### Las validaciones son controles de riesgo, no cortesía
+
+| Control | Qué hace |
+|---|---|
+| Frecuencia de muestreo fuera de 100–2000 Hz | Rechaza (REQ-002) |
+| Señal menor a 10 s, vacía o con valores no numéricos | Rechaza |
+| Picos R desordenados, repetidos o fuera de la señal | Rechaza |
+| Menos de 3 latidos | Rechaza: cada latido necesita vecinos para las features de ritmo |
+| Menos de 20 latidos | Avisa: la plantilla del paciente es poco confiable |
+| Calidad de señal baja | Avisa (REQ-005) |
+| **Ritmo irregular** (>15 % de los RR se apartan >30 % de la mediana) | Avisa |
+| **Frecuencia fuera de 54–109 lpm** (el rango de entrenamiento) | Avisa |
+
+Los dos últimos existen por una razón concreta: en el registro 232 el modelo clasifica **todos**
+los latidos como normales cuando el 73 % son supraventriculares. Un aviso basado en las
+predicciones no lo detectaría —el modelo "no ve" nada raro—, así que ambos se calculan **desde la
+señal**, con umbrales calibrados contra los casos de falla conocidos (registros 232 y 865) y
+registros de ritmo regular.
+
+### Demo
+
+Elegís un registro de DS2, un modelo (v1 a v5) y una ventana de tiempo, y muestra la **anotación
+del cardiólogo y la predicción lado a lado**, con métricas y matriz de confusión del registro
+completo. Sugerencias incluidas: el registro 232 para ver el fallo que no se resolvió, el 111 o el
+214 para el bloqueo de rama que arregló la v4, y el 105 para ruido.
+
+## Cómo se construyó: de la v1 a la v5
 
 ### Versión 2 del modelo: RR normalizado por paciente
 
@@ -253,7 +438,7 @@ para confirmar S (28 latidos S contra 35 671 N en 5 registros). Falta una base a
 | 5 | Evaluación final en DS2 — [`notebooks/04_ds2_evaluation.ipynb`](notebooks/04_ds2_evaluation.ipynb) | ✅ |
 | 6 | API FastAPI + Docker + demo Streamlit | ✅ |
 | 7 | Documentación estilo IEC 62304 / ISO 14971 — [`docs/`](docs/) | ✅ |
-| 8 | README final y publicación | ⏳ |
+| 8 | README final y publicación | ✅ |
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
 | + | Versión 3: 3 clases y estudio de calibración | ✅ |
 | + | Versión 4: morfología relativa al paciente | ✅ |
@@ -326,96 +511,23 @@ inversión de polaridad.
 ([`reports/model_selection.json`](reports/model_selection.json)). La CNN se reporta como
 comparación.
 
-## API y demo
+## Limitaciones
 
-```bash
-python -m ecg.segment && python -m ecg.train baseline-v5   # datos y modelo (una vez)
-uvicorn api.main:app --reload                              # API en http://localhost:8000/docs
-streamlit run app/streamlit_app.py                         # demo interactiva
-```
+Están todas en el [model card](docs/model_card.md) y en el
+[análisis de riesgo](docs/risk_analysis.md). Las tres que más importan:
 
-Con Docker (el modelo se entrena antes, porque `models/` no está en el repositorio). La imagen
-ocupa ~780 MB en disco: la API sirve el baseline de XGBoost y **no necesita PyTorch**, que es un extra
-opcional del paquete (`pip install -e ".[dl]"`) usado solo por la CNN:
+1. **El modelo que se sirve (v5) solo tiene validación cruzada en DS1.** Nunca se midió en DS2 ni
+   en una base externa, porque las tres disponibles ya se gastaron y reutilizarlas sería elegir el
+   modelo mirando el conjunto de prueba. Confirmarlo exige una base nueva.
+2. **El diseño asume que el ritmo y la forma dominantes del paciente son los normales.** Cuando la
+   arritmia *es* el ritmo de base, el supuesto se da vuelta y la sensibilidad de S cae a 0.00
+   (registro 865 de SVDB). La API lo advierte, pero no lo corrige.
+3. **La clase S sigue siendo débil** (Se 0.44 en validación) y la clase **F está fuera de
+   alcance**: un latido de fusión se informa como N o V.
 
-```bash
-docker build -t ecg-api . && docker run -p 8000:8000 ecg-api
-```
-
-### `POST /predict`
-
-```json
-{"fs": 360, "signal": [0.12, 0.15, "..."], "r_peaks": [370, 662, "..."]}
-```
-
-```json
-{
-  "model_version": "5.0.0",
-  "model_name": "baseline_v5",
-  "classes": ["N", "S", "V"],
-  "out_of_scope": ["F"],
-  "n_beats": 35,
-  "beats": [{"r_peak": 662, "time_s": 1.8389, "class": "N",
-             "probabilities": {"N": 1.0, "S": 0.0, "V": 0.0}}],
-  "warnings": ["2 latidos quedaron sin clasificar por estar en los bordes de la señal"],
-  "disclaimer": "Proyecto educativo y de investigación. No es un dispositivo médico; requiere revisión humana de un profesional."
-}
-```
-
-Si no se envían `r_peaks`, se detectan con `xqrs_detect`. Si `fs` no es 360 Hz, la señal se
-remuestrea y se avisa; las posiciones devueltas siempre están en el espacio de la señal enviada.
-
-### Las validaciones son controles de riesgo, no cortesía
-
-| Control | Qué hace |
-|---|---|
-| Frecuencia de muestreo fuera de 100–2000 Hz | Rechaza (REQ-002) |
-| Señal menor a 10 s, vacía o con valores no numéricos | Rechaza |
-| Picos R desordenados, repetidos o fuera de la señal | Rechaza |
-| Menos de 3 latidos | Rechaza: cada latido necesita vecinos para las features de ritmo |
-| Menos de 20 latidos | Avisa: la plantilla del paciente es poco confiable |
-| Calidad de señal baja | Avisa (REQ-005) |
-| **Ritmo irregular** (>15 % de los RR se apartan >30 % de la mediana) | Avisa |
-| **Frecuencia fuera de 54–109 lpm** (el rango de entrenamiento) | Avisa |
-
-Los dos últimos existen por una razón concreta: en el registro 232 el modelo clasifica **todos**
-los latidos como normales cuando el 73 % son supraventriculares. Un aviso basado en las
-predicciones no lo detectaría —el modelo "no ve" nada raro—, así que ambos se calculan **desde la
-señal**, con umbrales calibrados contra los casos de falla conocidos (registros 232 y 865) y
-registros de ritmo regular.
-
-### Demo
-
-Elegís un registro de DS2, un modelo (v1 a v5) y una ventana de tiempo, y muestra la **anotación
-del cardiólogo y la predicción lado a lado**, con métricas y matriz de confusión del registro
-completo. Sugerencias incluidas: el registro 232 para ver el fallo que no se resolvió, el 111 o el
-214 para el bloqueo de rama que arregló la v4, y el 105 para ruido.
-
-## Documentación estilo dispositivo médico
-
-Inspirada en **IEC 62304** (ciclo de vida del software médico) e **ISO 14971** (gestión de riesgo),
-con fines de aprendizaje. No es una declaración de cumplimiento.
-
-| Documento | Contenido |
-|---|---|
-| [Uso previsto](docs/intended_use.md) | Qué hace, para quién, y sobre todo **qué queda fuera de alcance** |
-| [Requisitos](docs/requirements.md) | 15 requisitos con identificador, cada uno con su verificación |
-| [Análisis de riesgo](docs/risk_analysis.md) | 10 riesgos con severidad, controles y riesgo residual |
-| [Trazabilidad](docs/traceability.md) | Requisito → código → prueba → riesgo |
-| [SOUP](docs/soup.md) | Inventario de software de terceros y qué pasa si cada uno falla |
-| [Model card](docs/model_card.md) | Datos, métricas, y las limitaciones del modelo que se sirve |
-
-Dos detalles que hacen que esto no sea papel mojado:
-
-- **La matriz de trazabilidad se verifica sola.** `tests/test_requirements.py` comprueba que cada
-  requisito esté trazado y que cada función y prueba citadas existan; si alguien renombra una
-  prueba y no actualiza la matriz, el CI falla.
-- **El umbral de sensibilidad de V (REQ-003) es una prueba automática**, no una promesa: se
-  contrasta contra el reporte de validación en cada corrida.
-
-El análisis de riesgo no es decorativo: **dos veces se rechazó una variante del modelo que ganaba
-en la métrica** porque aumentaba los latidos V no detectados (RISK-01), con el criterio declarado
-antes de correr cada experimento.
+Además: una sola derivación (MLII), datos de los años 70 y 80 con 47 sujetos, sin pacientes con
+marcapasos, adultos, y con un retraso de un latido por usar el intervalo RR siguiente, así que no
+sirve para tiempo real.
 
 ## Licencia
 
