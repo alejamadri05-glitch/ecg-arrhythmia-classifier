@@ -178,3 +178,20 @@ def test_disclaimer_is_in_every_response():
         assert "no es un dispositivo médico" in r.json()["disclaimer"].lower()
     if HAY_MODELO:
         assert "no es un dispositivo médico" in client.get("/model").json()["disclaimer"].lower()
+
+
+def test_landing_page_works_without_model():
+    """La página de inicio no debe depender de que haya un modelo entrenado."""
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "No es un dispositivo médico" in r.text  # REQ-012
+    for ruta in ("/docs", "/health", "/model"):
+        assert f'href="{ruta}"' in r.text
+
+
+def test_landing_page_is_not_in_the_openapi_schema():
+    """Es una página, no un endpoint de la API: no debe ensuciar /docs."""
+    esquema = client.get("/openapi.json").json()
+    assert "/" not in esquema["paths"]
+    assert set(esquema["paths"]) == {"/health", "/model", "/predict"}

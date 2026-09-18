@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clasificador de arritmias ECG</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fondo: #ffffff;
+    --superficie: #f6f7f9;
+    --borde: #e2e5ea;
+    --texto: #16181d;
+    --suave: #5b616e;
+    --acento: #2f6fd0;
+    --aviso-fondo: #fff8e6;
+    --aviso-borde: #e8c765;
+    --aviso-texto: #6b4e00;
+    --n: #4C72B0;
+    --s: #DD8452;
+    --v: #C44E52;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #101214;
+      --superficie: #171a1e;
+      --borde: #2a2f36;
+      --texto: #e8eaed;
+      --suave: #9aa3b0;
+      --acento: #6ba1f0;
+      --aviso-fondo: #2b2413;
+      --aviso-borde: #7a6320;
+      --aviso-texto: #f0d68a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 16px 64px;
+    background: var(--fondo);
+    color: var(--texto);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; }
+  header { padding-block: 40px 20px; }
+  h1 { font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.05rem; margin: 36px 0 12px; }
+  p { margin: 0 0 12px; }
+  .sub { color: var(--suave); margin: 0; }
+  .aviso {
+    background: var(--aviso-fondo);
+    border: 1px solid var(--aviso-borde);
+    color: var(--aviso-texto);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 18px 0 0;
+    font-size: 0.92rem;
+  }
+  .tarjetas { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .tarjeta {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .etiqueta { color: var(--suave); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .valor { font-size: 1.05rem; font-weight: 600; margin-top: 4px; word-break: break-word; }
+  .valor.chico { font-size: 0.95rem; font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { color: var(--suave); font-weight: 600; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; }
+  pre {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+  a { color: var(--acento); }
+  button {
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--acento);
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.55; cursor: progress; }
+  .puntito { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--suave); margin-right: 7px; }
+  .ok { background: #2e9e5b; }
+  .mal { background: #c0392b; }
+  .clases { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 0; font-size: 0.93rem; }
+  .clases span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .cN::before { background: var(--n); } .cS::before { background: var(--s); } .cV::before { background: var(--v); }
+  .avisos { margin: 12px 0 0; padding-left: 18px; color: var(--suave); font-size: 0.9rem; }
+  footer { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--borde); color: var(--suave); font-size: 0.88rem; }
+  svg { width: 100%; height: auto; display: block; margin-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Clasificador de arritmias ECG</h1>
+    <p class="sub">Clasifica cada latido como normal (N), supraventricular (S) o ventricular (V),
+       con evaluación inter-paciente sobre MIT-BIH.</p>
+    <div class="aviso">
+      <strong>No es un dispositivo médico.</strong> Proyecto educativo y de investigación.
+      No debe usarse para decisiones clínicas; toda salida requiere revisión de un profesional.
+    </div>
+  </header>
+
+  <section class="tarjetas">
+    <div class="tarjeta">
+      <div class="etiqueta">Estado</div>
+      <div class="valor" id="estado"><span class="puntito"></span>consultando…</div>
+    </div>
+    <div class="tarjeta">
+      <div class="etiqueta">Modelo</div>
+      <div class="valor" id="modelo">—</div>
+    </div>
+    <div class="tarjeta">
+      <div class="etiqueta">Entrada esperada</div>
+      <div class="valor chico" id="entrada">—</div>
+    </div>
+  </section>
+
+  <h2>Probar la API</h2>
+  <p>Genera en tu navegador una señal sintética de 30 segundos a 360 Hz y se la manda a
+     <code>POST /predict</code>. Sirve para comprobar que la API responde de punta a punta; no es
+     un ECG real, así que las predicciones son casi todas normales.</p>
+  <button id="probar">Enviar señal de prueba</button>
+  <div id="resultado"></div>
+
+  <h2>Endpoints</h2>
+  <table>
+    <tr><th>Ruta</th><th>Qué hace</th></tr>
+    <tr><td><a href="/docs">GET /docs</a></td><td>Documentación interactiva, con ejemplos ejecutables</td></tr>
+    <tr><td><a href="/health">GET /health</a></td><td>Estado del servicio y si el modelo está cargado</td></tr>
+    <tr><td><a href="/model">GET /model</a></td><td>Versión, clases, clases fuera de alcance y derivación</td></tr>
+    <tr><td><code>POST /predict</code></td><td>Clasifica los latidos de una señal</td></tr>
+  </table>
+
+  <h2>Desde la terminal</h2>
+  <pre><code>curl -s localhost:8000/model | python3 -m json.tool
+
+curl -s -X POST localhost:8000/predict \
+  -H 'content-type: application/json' \
+  -d '{"fs": 360, "signal": [0.1, 0.2, "…"], "r_peaks": [370, 662]}'</code></pre>
+  <p class="sub">Si no mandás <code>r_peaks</code>, se detectan solos. Si <code>fs</code> no es
+     360 Hz, la señal se remuestrea y la respuesta lo avisa.</p>
+
+  <h2>Qué valida antes de predecir</h2>
+  <table>
+    <tr><th>Control</th><th>Respuesta</th></tr>
+    <tr><td>Frecuencia de muestreo fuera de 100–2000 Hz</td><td>Rechaza con 422</td></tr>
+    <tr><td>Señal de menos de 10 s, vacía o con valores no numéricos</td><td>Rechaza con 422</td></tr>
+    <tr><td>Picos R desordenados, repetidos o fuera de la señal</td><td>Rechaza con 422</td></tr>
+    <tr><td>Ritmo muy irregular o frecuencia fuera del rango de entrenamiento</td><td>Avisa en <code>warnings</code></td></tr>
+    <tr><td>Calidad de señal baja o muy pocos latidos</td><td>Avisa en <code>warnings</code></td></tr>
+  </table>
+  <p class="sub">Estas validaciones son controles de riesgo documentados, no cortesía: cada una
+     está trazada a un requisito y a un riesgo.</p>
+
+  <footer>
+    <p>Fuera de alcance: uso clínico, tiempo real, pacientes con marcapasos, pediatría y latidos
+       de fusión (clase F). El modelo asume un ritmo de base regular.</p>
+    <p>
+      <a href="https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier">Código en GitHub</a> ·
+      <a href="https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/blob/main/docs/model_card.md">Model card</a> ·
+      <a href="https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/blob/main/docs/intended_use.md">Uso previsto</a> ·
+      <a href="https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier/blob/main/docs/risk_analysis.md">Análisis de riesgo</a>
+    </p>
+  </footer>
+</main>
+
+<script>
+const COLORES = { N: "var(--n)", S: "var(--s)", V: "var(--v)" };
+
+async function cargarEstado() {
+  const estado = document.getElementById("estado");
+  try {
+    const salud = await (await fetch("/health")).json();
+    const sano = salud.status === "ok" && salud.model_present;
+    estado.innerHTML = `<span class="puntito ${sano ? "ok" : "mal"}"></span>` +
+      (salud.model_present ? "en línea, modelo cargado" : "en línea, sin modelo");
+    if (!salud.model_present) return;
+    const m = await (await fetch("/model")).json();
+    document.getElementById("modelo").textContent = `${m.model_name} · v${m.model_version}`;
+    document.getElementById("entrada").textContent =
+      `Derivación ${m.lead}, ${m.fs_model} Hz · clases ${m.classes.join(", ")}` +
+      (m.out_of_scope.length ? ` · fuera de alcance: ${m.out_of_scope.join(", ")}` : "");
+  } catch {
+    estado.innerHTML = '<span class="puntito mal"></span>sin respuesta';
+  }
+}
+
+function señalSintetica(segundos = 30, fs = 360, lpm = 75) {
+  const n = Math.round(segundos * fs), periodo = 60 / lpm, picos = [];
+  for (let t = periodo / 2; t < segundos; t += periodo) picos.push(Math.round(t * fs));
+  const señal = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const t = i / fs;
+    for (const p of picos) {
+      const d = (t - p / fs) / 0.012;
+      if (Math.abs(d) < 6) señal[i] += Math.exp(-0.5 * d * d);
+    }
+    señal[i] = Number((señal[i] + 0.01 * Math.sin(2 * Math.PI * 0.3 * t)).toFixed(4));
+  }
+  return { fs, signal: señal, r_peaks: picos };
+}
+
+function dibujar(cuerpo, latidos, fs) {
+  const ancho = 860, alto = 120, muestras = Math.min(cuerpo.signal.length, fs * 6);
+  const paso = ancho / muestras;
+  let d = "";
+  for (let i = 0; i < muestras; i++) {
+    d += `${i === 0 ? "M" : "L"}${(i * paso).toFixed(1)},${(alto / 2 - cuerpo.signal[i] * 34).toFixed(1)}`;
+  }
+  const bandas = latidos
+    .filter(b => b.r_peak < muestras)
+    .map(b => `<rect x="${(b.r_peak * paso - 4).toFixed(1)}" y="4" width="8" height="${alto - 8}"
+                 fill="${COLORES[b.class] || "grey"}" opacity="0.3"></rect>`)
+    .join("");
+  return `<svg viewBox="0 0 ${ancho} ${alto}" role="img"
+            aria-label="Primeros 6 segundos de la señal de prueba con los latidos clasificados">
+      ${bandas}<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.2"></path>
+    </svg>`;
+}
+
+document.getElementById("probar").addEventListener("click", async (evento) => {
+  const boton = evento.currentTarget, salida = document.getElementById("resultado");
+  boton.disabled = true;
+  salida.innerHTML = "<p class='sub'>Enviando 10 800 muestras…</p>";
+  try {
+    const cuerpo = señalSintetica();
+    const r = await fetch("/predict", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(cuerpo),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      salida.innerHTML = `<p class="aviso">HTTP ${r.status}: ${d.detail || "error"}</p>`;
+      return;
+    }
+    const cuenta = {};
+    for (const b of d.beats) cuenta[b.class] = (cuenta[b.class] || 0) + 1;
+    const clases = Object.entries(cuenta)
+      .map(([c, n]) => `<span class="c${c}">${n} ${c}</span>`).join("");
+    const avisos = d.warnings.length
+      ? `<ul class="avisos">${d.warnings.map(w => `<li>${w}</li>`).join("")}</ul>`
+      : '<p class="sub">Sin advertencias.</p>';
+    salida.innerHTML = `
+      <p style="margin-top:14px"><strong>${d.n_beats} latidos clasificados</strong>
+         con ${d.model_name} v${d.model_version}.</p>
+      <div class="clases">${clases}</div>
+      ${dibujar(cuerpo, d.beats, cuerpo.fs)}
+      <p class="sub" style="margin-top:8px">Primeros 6 segundos de los 30 enviados.</p>
+      ${avisos}`;
+  } catch (e) {
+    salida.innerHTML = `<p class="aviso">No se pudo conectar con la API: ${e.message}</p>`;
+  } finally {
+    boton.disabled = false;
+  }
+});
+
+cargarEstado();
+</script>
+</body>
+</html>

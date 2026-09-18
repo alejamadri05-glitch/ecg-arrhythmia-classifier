@@ -17,6 +17,7 @@ from typing import Annotated
 import numpy as np
 import wfdb.processing
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from ecg import config
@@ -25,6 +26,7 @@ from ecg.models.baseline import BaselineClassifier
 from ecg.preprocess import bandpass, resample
 from ecg.segment import beat_windows
 
+STATIC_DIR = Path(__file__).parent / "static"
 MODEL_PATH = Path(os.getenv("ECG_MODEL", config.MODELS_DIR / "baseline_v5.joblib"))
 MODEL_VERSION = os.getenv("ECG_MODEL_VERSION", "5.0.0")
 
@@ -48,11 +50,29 @@ DISCLAIMER = (
     "requiere revisión humana de un profesional."
 )
 
+REPO = "https://github.com/alejamadri05-glitch/ecg-arrhythmia-classifier"
+
 app = FastAPI(
     title="Clasificador de arritmias ECG",
-    description=DISCLAIMER,
     version=MODEL_VERSION,
+    description=(
+        f"**{DISCLAIMER}**\n\n"
+        "Clasifica cada latido de una señal de ECG de una derivación como normal (N), "
+        "supraventricular (S) o ventricular (V). La clase F (fusión) está fuera de alcance.\n\n"
+        "Las validaciones de entrada son controles de riesgo trazados a requisitos: ver "
+        f"[uso previsto]({REPO}/blob/main/docs/intended_use.md), "
+        f"[análisis de riesgo]({REPO}/blob/main/docs/risk_analysis.md) y "
+        f"[model card]({REPO}/blob/main/docs/model_card.md).\n\n"
+        "Página de inicio: [/](/)"
+    ),
+    license_info={"name": "MIT", "url": f"{REPO}/blob/main/LICENSE"},
 )
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index() -> HTMLResponse:
+    """Página de inicio: estado del servicio, prueba interactiva y alcance del modelo."""
+    return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
 @lru_cache(maxsize=1)
@@ -72,6 +92,18 @@ class PredictRequest(BaseModel):
     r_peaks: list[int] | None = Field(
         None, description="Posiciones de los picos R. Si no se envían, se detectan."
     )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "fs": 360,
+                    "signal": "[0.12, 0.15, ...] al menos 10 s de señal",
+                    "r_peaks": [370, 662, 950],
+                }
+            ]
+        }
+    }
 
 
 class BeatPrediction(BaseModel):
@@ -141,13 +173,15 @@ def signal_quality(x: np.ndarray, r_peaks: np.ndarray) -> float | None:
         return None
 
 
-@app.get("/health")
+@app.get("/health", summary="Estado del servicio", tags=["servicio"])
 def health() -> dict:
+    """Responde aunque no haya modelo entrenado: `model_present` lo indica."""
     return {"status": "ok", "model_present": MODEL_PATH.exists()}
 
 
-@app.get("/model")
+@app.get("/model", summary="Versión y alcance del modelo", tags=["servicio"])
 def model_info() -> dict:
+    """Versión, clases que predice, clases fuera de alcance y derivación de entrenamiento."""
     model = get_model()
     return {
         "model_version": MODEL_VERSION,
@@ -162,8 +196,23 @@ def model_info() -> dict:
     }
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post(
+    "/predict",
+    response_model=PredictResponse,
+    summary="Clasifica los latidos de una señal",
+    tags=["predicción"],
+    responses={
+        422: {
+            "description": "Entrada inválida: fs fuera de rango, señal corta o picos R mal formados"
+        },
+        503: {"description": "No hay modelo entrenado en el servidor"},
+    },
+)
 def predict(request: Annotated[PredictRequest, Body()]) -> PredictResponse:
+    """Devuelve una clase y sus probabilidades por latido, más las advertencias sobre la señal.
+
+    Los latidos sin ventana completa (los de los bordes) no se clasifican y se avisan.
+    """
     signal = validate_input(request)
     warnings: list[str] = []
 

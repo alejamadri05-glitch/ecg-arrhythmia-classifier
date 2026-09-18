@@ -120,7 +120,9 @@ python -m ecg.segment && python -m ecg.train baseline-v5   # datos y modelo (mod
 docker build -t ecg-api . && docker run -p 8000:8000 ecg-api
 ```
 
-Después, la documentación interactiva queda en <http://localhost:8000/docs>.
+Después, <http://localhost:8000> tiene una página con el estado del servicio, el alcance del
+modelo y un botón que manda una señal de prueba a la API; la documentación interactiva, con
+ejemplos ejecutables, está en <http://localhost:8000/docs>.
 
 **Sin Docker**, con el entorno local:
 
