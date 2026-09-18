@@ -1,12 +1,14 @@
 # Clasificador de arritmias ECG (MIT-BIH)
 
-Clasifica cada latido de un ECG en las 4 clases AAMI (**N, S, V, F**) con evaluación
-**inter-paciente** (split de de Chazal DS1/DS2).
+Clasifica cada latido de un ECG en clases AAMI con evaluación **inter-paciente** (split de de
+Chazal DS1/DS2). El modelo que se sirve distingue **N, S y V**; la clase F (fusión) se declaró
+fuera de alcance en la v3 y el porqué está en el [model card](docs/model_card.md).
 
 > **Aviso:** proyecto educativo y de investigación. No es un dispositivo médico ni debe usarse
 > para decisiones clínicas.
 
-🚧 En construcción: fases 1 a 5 completas. Resultado final en DS2 más abajo.
+Fases 1 a 7 completas: modelo, API en Docker, demo y
+[documentación estilo IEC 62304 / ISO 14971](#documentación-estilo-dispositivo-médico).
 
 ## Inicio rápido
 
@@ -250,7 +252,7 @@ para confirmar S (28 latidos S contra 35 671 N en 5 registros). Falta una base a
 | 4 | CNN 1D (PyTorch) — [`notebooks/03_cnn.ipynb`](notebooks/03_cnn.ipynb) | ✅ |
 | 5 | Evaluación final en DS2 — [`notebooks/04_ds2_evaluation.ipynb`](notebooks/04_ds2_evaluation.ipynb) | ✅ |
 | 6 | API FastAPI + Docker + demo Streamlit | ✅ |
-| 7 | Documentación estilo IEC 62304 / ISO 14971 | ⏳ |
+| 7 | Documentación estilo IEC 62304 / ISO 14971 — [`docs/`](docs/) | ✅ |
 | 8 | README final y publicación | ⏳ |
 | + | Versión 2 del modelo y validación externa con INCART | ✅ |
 | + | Versión 3: 3 clases y estudio de calibración | ✅ |
@@ -388,6 +390,32 @@ Elegís un registro de DS2, un modelo (v1 a v5) y una ventana de tiempo, y muest
 del cardiólogo y la predicción lado a lado**, con métricas y matriz de confusión del registro
 completo. Sugerencias incluidas: el registro 232 para ver el fallo que no se resolvió, el 111 o el
 214 para el bloqueo de rama que arregló la v4, y el 105 para ruido.
+
+## Documentación estilo dispositivo médico
+
+Inspirada en **IEC 62304** (ciclo de vida del software médico) e **ISO 14971** (gestión de riesgo),
+con fines de aprendizaje. No es una declaración de cumplimiento.
+
+| Documento | Contenido |
+|---|---|
+| [Uso previsto](docs/intended_use.md) | Qué hace, para quién, y sobre todo **qué queda fuera de alcance** |
+| [Requisitos](docs/requirements.md) | 15 requisitos con identificador, cada uno con su verificación |
+| [Análisis de riesgo](docs/risk_analysis.md) | 10 riesgos con severidad, controles y riesgo residual |
+| [Trazabilidad](docs/traceability.md) | Requisito → código → prueba → riesgo |
+| [SOUP](docs/soup.md) | Inventario de software de terceros y qué pasa si cada uno falla |
+| [Model card](docs/model_card.md) | Datos, métricas, y las limitaciones del modelo que se sirve |
+
+Dos detalles que hacen que esto no sea papel mojado:
+
+- **La matriz de trazabilidad se verifica sola.** `tests/test_requirements.py` comprueba que cada
+  requisito esté trazado y que cada función y prueba citadas existan; si alguien renombra una
+  prueba y no actualiza la matriz, el CI falla.
+- **El umbral de sensibilidad de V (REQ-003) es una prueba automática**, no una promesa: se
+  contrasta contra el reporte de validación en cada corrida.
+
+El análisis de riesgo no es decorativo: **dos veces se rechazó una variante del modelo que ganaba
+en la métrica** porque aumentaba los latidos V no detectados (RISK-01), con el criterio declarado
+antes de correr cada experimento.
 
 ## Licencia
 

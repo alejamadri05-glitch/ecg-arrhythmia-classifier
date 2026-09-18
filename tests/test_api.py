@@ -143,3 +143,38 @@ def test_input_validation_does_not_need_the_model():
         r = client.post("/predict", json=payload)
         assert r.status_code == 422, (payload.get("r_peaks"), r.status_code, r.json())
         assert esperado in r.json()["detail"]
+
+
+@needs_model
+def test_warns_when_heart_rate_is_outside_training_range():
+    """REQ-009: en pacientes con frecuencia atípica el modelo detecta muchos menos S (RISK-05)."""
+    señal, picos = ecg_sintetico(segundos=60, lpm=40.0)  # RR 1.5 s; DS1 llega hasta 1.12 s
+    d = client.post("/predict", json={"fs": 360.0, "signal": señal, "r_peaks": picos}).json()
+    assert any("fuera del rango visto en entrenamiento" in w for w in d["warnings"])
+
+
+@needs_model
+def test_warns_when_signal_quality_is_low(monkeypatch):
+    """REQ-005: la calidad la calcula neurokit2; acá se fuerza un valor bajo."""
+    monkeypatch.setattr("api.main.signal_quality", lambda x, r_peaks: 0.2)
+    señal, picos = ecg_sintetico()
+    d = client.post("/predict", json={"fs": 360.0, "signal": señal, "r_peaks": picos}).json()
+    assert any("Calidad de señal baja" in w for w in d["warnings"])
+
+
+def test_quality_failure_does_not_break_the_prediction():
+    """El índice de calidad es informativo: si no se puede calcular, devuelve None en vez de
+    tumbar la respuesta (la predicción no depende de él)."""
+    from api.main import signal_quality
+
+    assert signal_quality(np.zeros(5), np.array([1, 2])) is None
+
+
+def test_disclaimer_is_in_every_response():
+    """REQ-012: el aviso de que no es un dispositivo médico viaja con cada respuesta."""
+    señal, picos = ecg_sintetico()
+    r = client.post("/predict", json={"fs": 360.0, "signal": señal, "r_peaks": picos})
+    if r.status_code == 200:  # sin modelo entrenado (CI) solo se comprueba /model
+        assert "no es un dispositivo médico" in r.json()["disclaimer"].lower()
+    if HAY_MODELO:
+        assert "no es un dispositivo médico" in client.get("/model").json()["disclaimer"].lower()
